@@ -1,0 +1,37 @@
+bundle:
+  name: mottainai_bi
+
+variables:
+  operational_catalog:
+    description: Existing PostgreSQL foreign catalog for the operational database.
+  analytics_catalog:
+    description: Existing PostgreSQL foreign catalog for the physical analytics database.
+  target_catalog:
+    description: Existing Unity Catalog destination, such as workspace in Free Edition.
+    default: workspace
+
+resources:
+  jobs:
+    analytics_to_medallion:
+      name: mottainai-analytics-to-medallion
+      max_concurrent_runs: 1
+      parameters:
+        - name: operational_catalog
+          default: ${var.operational_catalog}
+        - name: analytics_catalog
+          default: ${var.analytics_catalog}
+        - name: target_catalog
+          default: ${var.target_catalog}
+      tasks:
+        - task_key: preflight
+          notebook_task:
+            notebook_path: ./notebooks/01_preflight.py
+        - task_key: refresh_medallion
+          depends_on:
+            - task_key: preflight
+          notebook_task:
+            notebook_path: ./notebooks/02_refresh_medallion.py
+      schedule:
+        quartz_cron_expression: '0 30 2 * * ?'
+        timezone_id: America/Sao_Paulo
+        pause_status: PAUSED
