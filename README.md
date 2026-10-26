@@ -23,6 +23,31 @@ O job está em [databricks.yml](databricks.yml). Ele possui preflight e refresh,
 
 O preflight e as regras de limpeza estão nos [notebooks](notebooks). O [runbook](docs/RUNBOOK.md) traz as consultas de verificação e as condições de publicação.
 
+## Primeiro teste Bronze no Free Edition
+
+O catálogo estrangeiro `mottainai_analitico` encontra 139 relações no schema
+PostgreSQL e ultrapassa a cota de 100 tabelas por schema deste workspace.
+A conexão PostgreSQL `motta_analytics` funciona: uma consulta `remote_query`
+confirmou acesso ao banco físico `MOTTAINAI_ANALITICO` em 26/10/2026.
+
+Use [00_bronze_analitico.py](notebooks/00_bronze_analitico.py) como primeiro
+notebook. Ele lê somente o banco analítico pela conexão Unity Catalog, sem
+credenciais no código. O notebook testa a conexão e só copia dimensões, fatos
+e as sete relações de BI para `workspace.mottainai_bronze` após encontrar no
+`job_log` um lote `analytics_mart_v1` publicado. Cada tabela Bronze recebe o
+`batch_id`, o horário de corte e o horário de ingestão. Uma tabela de controle
+é atualizada depois que todas as contagens de origem e destino conferem.
+
+No teste de 26/10/2026, `fact_sales` e `fact_inventory_snapshot` ainda estavam
+vazias no analítico. A view antiga `vw_published_batch` mostrava um lote de
+20/10/2026, mas esse lote não contém o novo contrato de publicação. Por isso,
+o notebook deve retornar `WAITING_FOR_ANALYTICAL_PUBLICATION` até a nova carga
+operacional → analítico ser executada com sucesso. Não use os lotes antigos
+como base do dashboard.
+
+O job preflight/Silver/Gold abaixo ainda utiliza o catálogo estrangeiro e
+precisa ser adaptado à mesma leitura por `remote_query` antes de ser ativado.
+
 ## Datasets iniciais
 
 | Origem no banco analítico | Bronze | Silver | Gold |
@@ -35,4 +60,6 @@ As demais views prioritárias (`vw_stockout_analysis`, `vw_product_risk_ranking`
 
 ## Estado
 
-Os arquivos estão preparados no Git. A implantação, a execução real contra os dois catálogos e a criação do dashboard dependem de acesso ao workspace Databricks. Sem essa execução, não há confirmação de conectividade ou de dados publicados.
+A conexão ao PostgreSQL analítico foi confirmada no Databricks. A Bronze ainda
+aguarda um lote novo com fatos publicados; Silver, Gold e dashboard não foram
+executados no workspace.
