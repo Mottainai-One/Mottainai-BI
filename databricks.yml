@@ -6,6 +6,7 @@ variables:
     description: Existing PostgreSQL foreign catalog for the operational database.
   analytics_catalog:
     description: Existing PostgreSQL foreign catalog for the physical analytics database.
+    default: mottainai_analitico
   target_catalog:
     description: Existing Unity Catalog destination, such as workspace in Free Edition.
     default: workspace

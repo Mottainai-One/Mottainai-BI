@@ -2,15 +2,24 @@
 
 ## Antes do primeiro uso
 
-No SQL Editor do Databricks, substitua os nomes pelos catálogos **já criados** no workspace:
+O catálogo estrangeiro `mottainai_analitico` foi ligado ao banco físico
+`MOTTAINAI_ANALITICO`. Em 26/10/2026, o Databricks retornou os mesmos dois
+lotes `PUBLISHED` vistos diretamente no PostgreSQL (datas de negócio 18 e
+19/10/2026). O catálogo Regular `motta_analytics` não representa esse banco.
+
+No SQL Editor do Databricks, confirme o catálogo operacional e as views de origem:
 
 ```sql
 SHOW CATALOGS;
 SELECT count(*) FROM <catalogo_operacional>.mottainai.company;
 SELECT batch_id, source_cutoff_at, published_at
-FROM <catalogo_analitico>.mottainai_analytics.vw_published_batch;
+FROM mottainai_analitico.mottainai_analytics.vw_published_batch;
 SELECT count(*)
-FROM <catalogo_analitico>.mottainai_analytics.vw_sales_daily_kpis;
+FROM mottainai_analitico.mottainai_analytics.vw_sales_daily_kpis;
+SELECT count(*)
+FROM mottainai_analitico.mottainai_analytics.vw_monthly_summary;
+SELECT count(*)
+FROM mottainai_analitico.mottainai_analytics.vw_critical_stock;
 ```
 
 O primeiro `count` valida a conexão operacional, sem copiar seus dados. A view `vw_published_batch` deve mostrar **no máximo um** lote atual; sem lote publicado, o refresh não altera Gold.
@@ -18,8 +27,8 @@ O primeiro `count` valida a conexão operacional, sem copiar seus dados. A view 
 Para implantar com o Databricks CLI autenticado no workspace:
 
 ```powershell
-databricks bundle validate --var="operational_catalog=NOME" --var="analytics_catalog=NOME" --var="target_catalog=workspace"
-databricks bundle deploy --var="operational_catalog=NOME" --var="analytics_catalog=NOME" --var="target_catalog=workspace"
+databricks bundle validate --var="operational_catalog=NOME" --var="target_catalog=workspace"
+databricks bundle deploy --var="operational_catalog=NOME" --var="target_catalog=workspace"
 databricks bundle run analytics_to_medallion
 ```
 
