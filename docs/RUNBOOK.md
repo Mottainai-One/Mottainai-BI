@@ -5,7 +5,12 @@
 O catálogo estrangeiro `mottainai_analitico` foi ligado ao banco físico
 `MOTTAINAI_ANALITICO`. Em 26/10/2026, o Databricks retornou os mesmos dois
 lotes `PUBLISHED` vistos diretamente no PostgreSQL (datas de negócio 18 e
-19/10/2026). O catálogo Regular `motta_analytics` não representa esse banco.
+19/10/2026), mas as tabelas `fact_sales` e `fact_inventory_snapshot` estavam
+vazias. Esses lotes não comprovam que o data mart foi carregado. A migração
+`14_publish_mart_view.sql` do repositório do banco altera a view para mostrar
+somente a carga confirmada pela RPA na mesma transação dos fatos. Depois da
+migração, a view permanecerá vazia até a primeira execução real bem-sucedida.
+O catálogo Regular `motta_analytics` não representa o PostgreSQL analítico.
 
 No SQL Editor do Databricks, confirme o catálogo operacional e as views de origem:
 
