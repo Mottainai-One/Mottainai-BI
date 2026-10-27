@@ -15,6 +15,34 @@ jobs:
           python-version: '3.11'
       - name: Compile Databricks notebooks
         run: python -m compileall -q notebooks
+      - name: Validate dashboard source and generated definition
+        run: |
+          python dashboard/build_dashboard.py
+          git diff --exit-code -- dashboard/mottainai_bi.lvdash.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          dashboard = json.loads(Path('dashboard/mottainai_bi.lvdash.json').read_text(encoding='utf-8'))
+          datasets = {item['name'] for item in dashboard['datasets']}
+          assert len(datasets) == 6
+          for item in dashboard['datasets']:
+              sql = ' '.join(item['queryLines']).lower()
+              assert 'workspace.mottainai_gold.' in sql
+              assert 'remote_query(' not in sql
+              assert 'mottainai_operacional' not in sql
+          canvas = [page for page in dashboard['pages'] if page['pageType'] == 'PAGE_TYPE_CANVAS']
+          filters = [page for page in dashboard['pages'] if page['pageType'] == 'PAGE_TYPE_GLOBAL_FILTERS']
+          assert len(canvas) == 2 and len(filters) == 1
+          widgets = [part['widget'] for page in dashboard['pages'] for part in page['layout']]
+          assert {'filter-period', 'filter-store'} <= {widget['name'] for widget in widgets}
+          assert {'counter', 'line', 'bar', 'histogram', 'box', 'symbol-map'} <= {
+              widget.get('spec', {}).get('widgetType') for widget in widgets
+          }
+          for widget in widgets:
+              for query in widget.get('queries', []):
+                  assert query['query']['datasetName'] in datasets
+          PY
       - name: Parse and inspect bundle configuration
         run: |
           python -m pip install 'PyYAML==6.0.2'
