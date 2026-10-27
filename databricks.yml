@@ -2,33 +2,49 @@ bundle:
   name: mottainai_bi
 
 variables:
-  operational_catalog:
-    description: Existing PostgreSQL foreign catalog for the operational database.
-  analytics_catalog:
-    description: Existing PostgreSQL foreign catalog for the physical analytics database.
+  operational_connection:
+    description: Unity Catalog connection to PostgreSQL MOTTAINAI (preflight only).
+    default: conection_motta_operacional
+  operational_database:
+    default: MOTTAINAI
+  analytics_connection:
+    description: Unity Catalog connection to PostgreSQL MOTTAINAI_ANALITICO.
+    default: motta_analytics
+  analytics_database:
+    default: MOTTAINAI_ANALITICO
   target_catalog:
-    description: Existing Unity Catalog destination, such as workspace in Free Edition.
+    description: Managed Unity Catalog destination for Delta tables.
     default: workspace
 
 resources:
   jobs:
     analytics_to_medallion:
       name: mottainai-analytics-to-medallion
+      description: Read the last committed analytical batch and publish validated Bronze, Silver and Gold snapshots.
       max_concurrent_runs: 1
       parameters:
-        - name: operational_catalog
-          default: ${var.operational_catalog}
-        - name: analytics_catalog
-          default: ${var.analytics_catalog}
+        - name: operational_connection
+          default: ${var.operational_connection}
+        - name: operational_database
+          default: ${var.operational_database}
+        - name: analytics_connection
+          default: ${var.analytics_connection}
+        - name: analytics_database
+          default: ${var.analytics_database}
         - name: target_catalog
           default: ${var.target_catalog}
       tasks:
         - task_key: preflight
           notebook_task:
             notebook_path: ./notebooks/01_preflight.py
-        - task_key: refresh_medallion
+        - task_key: bronze
           depends_on:
             - task_key: preflight
+          notebook_task:
+            notebook_path: ./notebooks/00_bronze_analitico.py
+        - task_key: refresh_medallion
+          depends_on:
+            - task_key: bronze
           notebook_task:
             notebook_path: ./notebooks/02_refresh_medallion.py
       schedule:

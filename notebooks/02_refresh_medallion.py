@@ -1,203 +1,295 @@
 # Databricks notebook source
-"""Publish a consistent BI snapshot only after the analytical batch is published."""
+"""Validate one Bronze batch and atomically expose a business-facing Gold snapshot."""
 
 import re
 import uuid
 
-from pyspark.sql.functions import (
-    col,
-    current_timestamp,
-    lit,
-    struct,
-    to_json,
-    when,
-)
+from pyspark.sql import functions as F
 
 
 def identifier(value: str) -> str:
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", value):
-        raise ValueError(f"Invalid Unity Catalog identifier: {value!r}")
+        raise ValueError(f"Invalid identifier: {value!r}")
     return value
 
 
-for name in ("analytics_catalog", "target_catalog"):
-    dbutils.widgets.text(name, "")
+def literal(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
 
-analytics = identifier(dbutils.widgets.get("analytics_catalog"))
-target = identifier(dbutils.widgets.get("target_catalog"))
-source = f"`{analytics}`.`mottainai_analytics`"
-control = f"`{target}`.`mottainai_control`.`publication`"
 
-published = spark.sql(
-    f"SELECT batch_id, source_cutoff_at, published_at FROM {source}.`vw_published_batch`"
+for name, default in (
+    ("analytics_connection", "motta_analytics"),
+    ("analytics_database", "MOTTAINAI_ANALITICO"),
+    ("target_catalog", "workspace"),
+):
+    dbutils.widgets.text(name, default)
+
+connection = identifier(dbutils.widgets.get("analytics_connection"))
+database = identifier(dbutils.widgets.get("analytics_database"))
+catalog = identifier(dbutils.widgets.get("target_catalog"))
+bronze = f"`{catalog}`.`mottainai_bronze`"
+silver = f"`{catalog}`.`mottainai_silver`"
+gold = f"`{catalog}`.`mottainai_gold`"
+control = f"`{catalog}`.`mottainai_control`.`publication`"
+bronze_control = f"`{catalog}`.`mottainai_control`.`bronze_publication`"
+
+spark.sql(f"""
+CREATE TABLE IF NOT EXISTS {control} (
+  pipeline STRING, batch_id STRING, source_cutoff_at TIMESTAMP,
+  source_published_at TIMESTAMP, refreshed_at TIMESTAMP
+) USING DELTA
+""")
+if not spark.catalog.tableExists(f"{catalog}.mottainai_control.bronze_publication"):
+    print("Bronze has no published analytical batch; Gold remains unchanged")
+    dbutils.notebook.exit("WAITING_FOR_ANALYTICAL_PUBLICATION")
+bronze_rows = spark.sql(
+    f"SELECT batch_id, source_cutoff_at, source_published_at FROM {bronze_control} "
+    "WHERE pipeline = 'operational_to_analytics_daily'"
 ).collect()
-if not published:
-    print("No published analytical batch; leaving the current dashboard snapshot intact")
-    dbutils.notebook.exit("NO_NEW_BATCH")
-if len(published) != 1 or published[0]["batch_id"] is None:
-    raise RuntimeError("Expected exactly one published analytical batch with a batch_id")
+if not bronze_rows:
+    print("Bronze has no published analytical batch; Gold remains unchanged")
+    dbutils.notebook.exit("WAITING_FOR_ANALYTICAL_PUBLICATION")
+if len(bronze_rows) != 1:
+    raise RuntimeError("Bronze control has duplicate pipeline rows")
 
-batch = str(uuid.UUID(str(published[0]["batch_id"])))
+batch = str(uuid.UUID(str(bronze_rows[0]["batch_id"])))
 previous = spark.sql(
     f"SELECT batch_id FROM {control} WHERE pipeline = 'operational_to_analytics_daily'"
 ).collect()
 if len(previous) > 1:
-    raise RuntimeError("Publication control has duplicate pipeline rows")
+    raise RuntimeError("Gold control has duplicate pipeline rows")
 if previous and previous[0]["batch_id"] == batch:
-    print(f"Batch {batch} is already published in BI")
+    print(f"Gold already exposes batch {batch}")
     dbutils.notebook.exit("NO_NEW_BATCH")
 
-sources = {
-    "sales_daily_kpis": "vw_sales_daily_kpis",
-    "monthly_summary": "vw_monthly_summary",
-    "critical_stock": "vw_critical_stock",
+# Read only the commit marker from PostgreSQL. All transformations below use
+# the complete Bronze copy, not live operational data or a foreign catalog.
+def published_batch():
+    source_sql = (
+        "SELECT batch_id FROM mottainai_analytics.job_log "
+        "WHERE job_name = 'operational_to_analytics_daily' "
+        "AND status = 'SUCCEEDED' AND batch_id IS NOT NULL "
+        "AND cutoff_at IS NOT NULL "
+        "AND metadata ->> 'publication_contract' = 'analytics_mart_v1' "
+        "ORDER BY finished_at DESC, job_id DESC LIMIT 1"
+    )
+    rows = spark.sql(
+        "SELECT * FROM remote_query("
+        f"{literal(connection)}, database => {literal(database)}, "
+        f"query => {literal(source_sql)})"
+    ).collect()
+    return str(rows[0]["batch_id"]) if len(rows) == 1 and rows[0]["batch_id"] else None
+
+
+if published_batch() != batch:
+    raise RuntimeError("Bronze batch is not the latest committed analytical publication")
+
+
+def staged(name: str):
+    return spark.table(f"{bronze}.`{name}`").where(F.col("_batch_id") == batch)
+
+
+def duplicates(frame, keys):
+    return frame.groupBy(*keys).count().where(F.col("count") > 1).limit(1).count() > 0
+
+
+sales = staged("vw_sales_daily_kpis").selectExpr(
+    "_batch_id", "cast(sale_date as date) AS sale_date",
+    "cast(company_id as long) AS company_id", "cast(store_id as long) AS store_id",
+    "trim(store_name) AS store_name", "cast(sale_count as long) AS sale_count",
+    "cast(item_count as long) AS item_count",
+    "cast(gross_revenue as decimal(20,2)) AS gross_revenue",
+    "cast(discount_amount as decimal(20,2)) AS discount_amount",
+    "cast(net_revenue as decimal(20,2)) AS net_revenue",
+    "cast(average_ticket as decimal(20,2)) AS average_ticket",
+)
+monthly = staged("vw_monthly_summary").selectExpr(
+    "_batch_id", "cast(month_start as date) AS month_start",
+    "cast(store_id as long) AS store_id", "trim(store_name) AS store_name",
+    "cast(total_sales as long) AS total_sales",
+    "cast(total_revenue as decimal(20,2)) AS total_revenue",
+    "cast(avg_ticket as decimal(20,2)) AS avg_ticket",
+    "cast(active_sellers as long) AS active_sellers",
+    "cast(units_sold as decimal(20,3)) AS units_sold",
+)
+stock = staged("vw_critical_stock").selectExpr(
+    "_batch_id", "cast(inventory_id as long) AS inventory_id",
+    "cast(product_id as long) AS product_id", "trim(product) AS product",
+    "cast(store_id as long) AS store_id", "trim(store) AS store",
+    "cast(current_quantity as decimal(20,3)) AS current_quantity",
+    "cast(minimum_quantity as decimal(20,3)) AS minimum_quantity",
+)
+transactions = staged("fact_sales").selectExpr(
+    "_batch_id", "cast(sale_id as long) AS sale_id",
+    "cast(sale_date as date) AS sale_date", "cast(company_id as long) AS company_id",
+    "cast(store_id as long) AS store_id", "upper(trim(status)) AS status",
+    "cast(item_count as long) AS item_count",
+    "cast(gross_amount as decimal(20,2)) AS gross_amount",
+    "cast(discount_amount as decimal(20,2)) AS discount_amount",
+    "cast(net_amount as decimal(20,2)) AS net_amount",
+)
+stores = staged("dim_store").selectExpr(
+    "_batch_id", "cast(store_id as long) AS store_id",
+    "cast(company_id as long) AS company_id", "trim(name) AS store_name",
+    "trim(city) AS city", "trim(state_code) AS state_code",
+    "cast(latitude as double) AS latitude", "cast(longitude as double) AS longitude",
+    "cast(active as boolean) AS active",
+)
+risk = staged("vw_product_risk_ranking").selectExpr(
+    "_batch_id", "cast(store_id as long) AS store_id", "trim(store_name) AS store_name",
+    "cast(product_id as long) AS product_id", "trim(product_name) AS product_name",
+    "upper(trim(stockout_risk)) AS stockout_risk",
+    "cast(current_stock as decimal(20,3)) AS current_stock",
+    "cast(days_of_coverage as decimal(20,3)) AS days_of_coverage",
+    "cast(quantity_at_expiration_risk as decimal(20,3)) AS quantity_at_expiration_risk",
+    "cast(value_at_expiration_risk as decimal(20,2)) AS value_at_expiration_risk",
+    "cast(nearest_expiration_days as int) AS nearest_expiration_days",
+    "upper(trim(consolidated_risk)) AS consolidated_risk",
+)
+
+# A duplicate business key is a source contract violation, not a row to silently
+# discard. Failing here protects every Gold chart from double counting.
+for name, frame, keys in (
+    ("sales_daily_kpis", sales, ["sale_date", "company_id", "store_id"]),
+    ("monthly_summary", monthly, ["month_start", "store_id"]),
+    ("fact_sales", transactions, ["sale_id", "sale_date"]),
+    ("dim_store", stores, ["store_id"]),
+    ("product_risk_ranking", risk, ["store_id", "product_id"]),
+):
+    if duplicates(frame, keys):
+        raise RuntimeError(f"Duplicate business key in {name}")
+
+checks = {
+    "sales_daily_kpis": (
+        sales, F.col("sale_date").isNull() | F.col("company_id").isNull()
+        | F.col("store_id").isNull() | F.col("sale_count").isNull()
+        | ((F.col("sale_count") > 0) & F.col("net_revenue").isNull())
+        | (F.col("sale_count") < 0)
+        | (F.col("item_count") < 0) | (F.col("gross_revenue") < 0)
+        | (F.col("discount_amount") < 0) | (F.col("net_revenue") < 0)
+    ),
+    "monthly_summary": (
+        monthly, F.col("month_start").isNull() | F.col("store_id").isNull()
+        | F.col("total_sales").isNull() | (F.col("total_sales") < 0)
+        | (F.col("total_revenue") < 0) | (F.col("active_sellers") < 0)
+        | (F.col("units_sold") < 0)
+    ),
+    "critical_stock": (
+        stock, F.col("product_id").isNull() | F.col("store_id").isNull()
+        | F.col("current_quantity").isNull() | F.col("minimum_quantity").isNull()
+        | (F.col("minimum_quantity") < 0)
+        | (F.col("current_quantity") >= F.col("minimum_quantity"))
+    ),
+    "fact_sales": (
+        transactions, F.col("sale_id").isNull() | F.col("sale_date").isNull()
+        | F.col("company_id").isNull() | F.col("store_id").isNull()
+        | F.col("status").isNull() | F.col("net_amount").isNull()
+        | ((F.col("status") == "COMPLETED") & (F.col("net_amount") < 0))
+    ),
+    "dim_store": (
+        stores, F.col("store_id").isNull() | F.col("company_id").isNull()
+        | F.col("store_name").isNull() | (F.length("store_name") == 0)
+        | (F.col("latitude").isNotNull() & (F.abs("latitude") > 90))
+        | (F.col("longitude").isNotNull() & (F.abs("longitude") > 180))
+        | (F.col("latitude").isNull() != F.col("longitude").isNull())
+    ),
+    "product_risk_ranking": (
+        risk, F.col("store_id").isNull() | F.col("product_id").isNull()
+        | F.col("consolidated_risk").isNull()
+        | (~F.col("consolidated_risk").isin("LOW", "MEDIUM", "HIGH", "CRITICAL"))
+    ),
 }
 
+quarantine = f"{silver}.`rejected_rows`"
+spark.sql(f"""
+CREATE TABLE IF NOT EXISTS {quarantine} (
+  source_relation STRING, batch_id STRING, error_code STRING,
+  rejected_count BIGINT, recorded_at TIMESTAMP
+) USING DELTA
+""")
+spark.sql(f"DELETE FROM {quarantine} WHERE batch_id = {literal(batch)}")
+failures = []
+for name, (frame, invalid) in checks.items():
+    bad = frame.where(invalid).count()
+    if bad:
+        failures.append((name, batch, "invalid_key_or_measure", bad))
+if failures:
+    spark.createDataFrame(
+        failures,
+        "source_relation STRING, batch_id STRING, error_code STRING, rejected_count LONG",
+    ).withColumn("recorded_at", F.current_timestamp()).write.mode("append").saveAsTable(quarantine)
+    raise RuntimeError(f"Batch {batch} failed data quality checks: {failures}")
 
-def replace_unpublished_batch(table: str) -> None:
-    if spark.catalog.tableExists(table.replace("`", "")):
-        spark.sql(f"DELETE FROM {table} WHERE _batch_id = '{batch}'")
+# This controls referential integrity without loading personal data into Gold.
+store_ids = stores.select("store_id").distinct()
+unknown_sales_stores = transactions.select("store_id").distinct().join(
+    store_ids, "store_id", "left_anti"
+).count()
+if unknown_sales_stores:
+    raise RuntimeError(f"{unknown_sales_stores} sales stores are absent from dim_store")
 
-
-def append_table(frame, table: str) -> None:
+for name, frame in (
+    ("sales_daily_kpis", sales), ("monthly_summary", monthly),
+    ("critical_stock", stock), ("fact_sales", transactions),
+    ("dim_store", stores), ("product_risk_ranking", risk),
+):
+    table = f"{silver}.`{name}`"
+    if spark.catalog.tableExists(f"{catalog}.mottainai_silver.{name}"):
+        spark.sql(f"DELETE FROM {table} WHERE _batch_id = {literal(batch)}")
     frame.write.format("delta").mode("append").saveAsTable(table)
+    written = spark.table(table).where(F.col("_batch_id") == batch).count()
+    expected = frame.count()
+    if written != expected:
+        raise RuntimeError(f"Silver {name}: {written} rows written, expected {expected}")
+    print(f"Silver {name}: {written} rows")
 
+if published_batch() != batch:
+    raise RuntimeError("A newer PostgreSQL analytical publication appeared during refresh")
 
-# Bronze preserves the selected analytical views as received. The published
-# batch ID is the replay key; a failed, unpublished attempt can be retried.
-for dataset, relation in sources.items():
-    bronze = f"`{target}`.`mottainai_bronze`.`{dataset}`"
-    replace_unpublished_batch(bronze)
-    frame = (
-        spark.table(f"{source}.`{relation}`")
-        .withColumn("_batch_id", lit(batch))
-        .withColumn("_source_published_at", lit(published[0]["published_at"]))
-        .withColumn("_ingested_at", current_timestamp())
-    )
-    append_table(frame, bronze)
-    rows_written = spark.table(bronze).where(col("_batch_id") == batch).count()
-    print(f"Bronze {dataset}: {rows_written} rows")
-
-bronze_sales = spark.table(f"`{target}`.`mottainai_bronze`.`sales_daily_kpis`").where(
-    col("_batch_id") == batch
-)
-sales = bronze_sales.selectExpr(
-    "_batch_id", "cast(sale_date as date) as sale_date",
-    "cast(company_id as bigint) as company_id", "cast(store_id as bigint) as store_id",
-    "trim(store_name) as store_name", "coalesce(cast(sale_count as bigint), 0) as sale_count",
-    "coalesce(cast(item_count as bigint), 0) as item_count",
-    "coalesce(cast(gross_revenue as decimal(20,2)), 0) as gross_revenue",
-    "coalesce(cast(discount_amount as decimal(20,2)), 0) as discount_amount",
-    "coalesce(cast(net_revenue as decimal(20,2)), 0) as net_revenue",
-    "coalesce(cast(average_ticket as decimal(20,2)), 0) as average_ticket",
-)
-if sales.groupBy("_batch_id", "sale_date", "company_id", "store_id").count().where(col("count") > 1).limit(1).count():
-    raise RuntimeError("Duplicate daily sales keys in the analytical source")
-sales = sales.withColumn(
-    "_quality_error",
-    when(
-        col("sale_date").isNull() | col("company_id").isNull() |
-        col("store_id").isNull() | (col("sale_count") < 0) |
-        (col("item_count") < 0) | (col("gross_revenue") < 0) |
-        (col("discount_amount") < 0) | (col("net_revenue") < 0),
-        lit("invalid_sales_key_or_measure"),
-    ),
-)
-
-bronze_monthly = spark.table(f"`{target}`.`mottainai_bronze`.`monthly_summary`").where(
-    col("_batch_id") == batch
-)
-monthly = bronze_monthly.selectExpr(
-    "_batch_id", "cast(month_start as date) as month_start",
-    "cast(store_id as bigint) as store_id", "trim(store_name) as store_name",
-    "cast(total_sales as bigint) as total_sales",
-    "coalesce(cast(total_revenue as decimal(20,2)), 0) as total_revenue",
-    "coalesce(cast(avg_ticket as decimal(20,2)), 0) as avg_ticket",
-    "cast(active_sellers as bigint) as active_sellers",
-    "coalesce(cast(units_sold as decimal(20,3)), 0) as units_sold",
-)
-if monthly.groupBy("_batch_id", "month_start", "store_id").count().where(col("count") > 1).limit(1).count():
-    raise RuntimeError("Duplicate monthly summary keys in the analytical source")
-monthly = monthly.withColumn(
-    "_quality_error",
-    when(
-        col("month_start").isNull() | col("store_id").isNull() |
-        col("total_sales").isNull() | col("active_sellers").isNull() |
-        (col("total_sales") < 0) | (col("total_revenue") < 0) |
-        (col("active_sellers") < 0) | (col("units_sold") < 0),
-        lit("invalid_monthly_key_or_measure"),
-    ),
-)
-
-bronze_stock = spark.table(f"`{target}`.`mottainai_bronze`.`critical_stock`").where(
-    col("_batch_id") == batch
-)
-stock = bronze_stock.selectExpr(
-    "_batch_id", "cast(inventory_id as bigint) as inventory_id",
-    "cast(product_id as bigint) as product_id", "trim(product) as product",
-    "cast(store_id as bigint) as store_id", "trim(store) as store",
-    "cast(current_quantity as decimal(20,3)) as current_quantity",
-    "cast(minimum_quantity as decimal(20,3)) as minimum_quantity",
-).dropDuplicates()
-stock = stock.withColumn("negative_stock_flag", col("current_quantity") < 0).withColumn(
-    "_quality_error",
-    when(
-        col("product_id").isNull() | col("store_id").isNull() |
-        col("current_quantity").isNull() | col("minimum_quantity").isNull() |
-        (col("minimum_quantity") < 0),
-        lit("invalid_stock_key_or_threshold"),
-    ),
-)
-
-quality_failures = 0
-quarantine = f"`{target}`.`mottainai_silver`.`rejected_rows`"
-replace_unpublished_batch(quarantine)
-for dataset, frame in (("sales_daily_kpis", sales), ("monthly_summary", monthly), ("critical_stock", stock)):
-    silver = f"`{target}`.`mottainai_silver`.`{dataset}`"
-    replace_unpublished_batch(silver)
-    rejected = frame.where(col("_quality_error").isNotNull())
-    count = rejected.count()
-    quality_failures += count
-    if count:
-        append_table(
-            rejected.select(
-                lit(dataset).alias("source_view"), col("_batch_id"),
-                col("_quality_error").alias("error_code"),
-                to_json(struct(*[col(c) for c in frame.columns if c != "_quality_error"])).alias("row_json"),
-                current_timestamp().alias("recorded_at"),
-            ),
-            quarantine,
-        )
-    append_table(frame.where(col("_quality_error").isNull()).drop("_quality_error"), silver)
-    print(f"Silver {dataset}: {count} rejected rows")
-
-if quality_failures:
-    raise RuntimeError(f"BI batch {batch} has {quality_failures} quarantined rows; publication withheld")
-
-# Detect a newer analytical publication before exposing this snapshot.
-latest = spark.sql(f"SELECT batch_id FROM {source}.`vw_published_batch`").first()
-if latest is None or str(latest["batch_id"]) != batch:
-    raise RuntimeError("Analytical publication changed during refresh; retry the BI job")
-
-# Gold is a business-facing projection over cleaned, batch-versioned Silver.
-# The control pointer switches only after all three datasets are ready.
-for dataset in sources:
+# A single pointer switch exposes every Gold dataset at the same published batch.
+for name in ("sales_daily_kpis", "monthly_summary", "critical_stock", "product_risk_ranking"):
     spark.sql(f"""
-    CREATE OR REPLACE VIEW `{target}`.`mottainai_gold`.`{dataset}` AS
-    SELECT s.* FROM `{target}`.`mottainai_silver`.`{dataset}` s
+    CREATE OR REPLACE VIEW {gold}.`{name}` AS
+    SELECT s.* FROM {silver}.`{name}` s
     JOIN {control} p ON p.pipeline = 'operational_to_analytics_daily'
       AND s._batch_id = p.batch_id
     """)
-
 spark.sql(f"""
-CREATE OR REPLACE VIEW `{target}`.`mottainai_gold`.`dashboard_freshness` AS
+CREATE OR REPLACE VIEW {gold}.`ticket_distribution` AS
+SELECT s.sale_date, s.company_id, s.store_id, s.net_amount AS ticket_amount,
+       s.item_count, s._batch_id
+FROM {silver}.`fact_sales` s
+JOIN {control} p ON p.pipeline = 'operational_to_analytics_daily'
+ AND s._batch_id = p.batch_id
+WHERE s.status = 'COMPLETED'
+""")
+spark.sql(f"""
+CREATE OR REPLACE VIEW {gold}.`stores` AS
+SELECT s.store_id, s.company_id, s.store_name, s.city, s.state_code,
+       s.latitude, s.longitude, s.active, s._batch_id
+FROM {silver}.`dim_store` s
+JOIN {control} p ON p.pipeline = 'operational_to_analytics_daily'
+ AND s._batch_id = p.batch_id
+""")
+spark.sql(f"""
+CREATE OR REPLACE VIEW {gold}.`store_geography` AS
+SELECT s.store_id, s.company_id, s.store_name, s.city, s.state_code,
+       s.latitude, s.longitude, s.active, s._batch_id
+FROM {silver}.`dim_store` s
+JOIN {control} p ON p.pipeline = 'operational_to_analytics_daily'
+ AND s._batch_id = p.batch_id
+WHERE s.latitude IS NOT NULL AND s.longitude IS NOT NULL
+""")
+spark.sql(f"""
+CREATE OR REPLACE VIEW {gold}.`dashboard_freshness` AS
 SELECT batch_id, source_cutoff_at, source_published_at, refreshed_at
 FROM {control} WHERE pipeline = 'operational_to_analytics_daily'
 """)
 
 spark.createDataFrame(
-    [("operational_to_analytics_daily", batch, published[0]["source_cutoff_at"], published[0]["published_at"])],
-    "pipeline string, batch_id string, source_cutoff_at timestamp, source_published_at timestamp",
+    [("operational_to_analytics_daily", batch,
+      bronze_rows[0]["source_cutoff_at"], bronze_rows[0]["source_published_at"])],
+    "pipeline STRING, batch_id STRING, source_cutoff_at TIMESTAMP, source_published_at TIMESTAMP",
 ).createOrReplaceTempView("_mottainai_next_publication")
 spark.sql(f"""
 MERGE INTO {control} AS target
@@ -213,4 +305,4 @@ WHEN NOT MATCHED THEN INSERT
   VALUES (source.pipeline, source.batch_id, source.source_cutoff_at,
           source.source_published_at, current_timestamp())
 """)
-print(f"Published BI batch {batch}")
+print(f"Gold published batch {batch}")

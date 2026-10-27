@@ -1,55 +1,83 @@
 # Databricks notebook source
-"""Check both PostgreSQL foreign catalogs and prepare the managed BI schemas."""
+"""Validate both PostgreSQL connections and the committed analytical snapshot."""
 
 import re
 
 
 def identifier(value: str) -> str:
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", value):
-        raise ValueError(f"Invalid Unity Catalog identifier: {value!r}")
+        raise ValueError(f"Invalid identifier: {value!r}")
     return value
 
 
-for name in ("operational_catalog", "analytics_catalog", "target_catalog"):
-    dbutils.widgets.text(name, "")
+def literal(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
 
-operational = identifier(dbutils.widgets.get("operational_catalog"))
-analytics = identifier(dbutils.widgets.get("analytics_catalog"))
-target = identifier(dbutils.widgets.get("target_catalog"))
 
-if operational == analytics:
-    raise ValueError("Operational and analytical foreign catalogs must be distinct")
-if target in (operational, analytics):
-    raise ValueError("Managed BI tables cannot be created in a foreign catalog")
+for name, default in (
+    ("operational_connection", "conection_motta_operacional"),
+    ("operational_database", "MOTTAINAI"),
+    ("analytics_connection", "motta_analytics"),
+    ("analytics_database", "MOTTAINAI_ANALITICO"),
+    ("target_catalog", "workspace"),
+):
+    dbutils.widgets.text(name, default)
 
-# The operational catalog is checked only. No BI data is ingested from it.
-operational_count = spark.sql(
-    f"SELECT count(*) AS rows_total FROM `{operational}`.`mottainai`.`company`"
-).first()["rows_total"]
-print(f"Operational connection OK; company rows: {operational_count}")
+operational_connection = identifier(dbutils.widgets.get("operational_connection"))
+operational_database = identifier(dbutils.widgets.get("operational_database"))
+analytics_connection = identifier(dbutils.widgets.get("analytics_connection"))
+analytics_database = identifier(dbutils.widgets.get("analytics_database"))
+target_catalog = identifier(dbutils.widgets.get("target_catalog"))
 
-source_schema = f"`{analytics}`.`mottainai_analytics`"
-batch_rows = spark.sql(
-    f"SELECT batch_id, source_cutoff_at, published_at "
-    f"FROM {source_schema}.`vw_published_batch`"
+if (operational_connection, operational_database) == (analytics_connection, analytics_database):
+    raise ValueError("Operational and analytical sources must be distinct")
+
+
+def remote_query(connection: str, database: str, sql: str):
+    return spark.sql(
+        "SELECT * FROM remote_query("
+        f"{literal(connection)}, database => {literal(database)}, "
+        f"query => {literal(sql)})"
+    )
+
+
+for connection, database in (
+    (operational_connection, operational_database),
+    (analytics_connection, analytics_database),
+):
+    actual = remote_query(connection, database, "SELECT current_database() AS database_name").first()[
+        "database_name"
+    ]
+    if actual != database:
+        raise RuntimeError(f"Connection {connection} reached {actual}, expected {database}")
+    print(f"Connection OK: {connection} -> {actual}")
+
+# Operational data is never copied to Databricks. It is used only to verify
+# connectivity; the published analytical database is the sole BI source.
+remote_query(
+    operational_connection,
+    operational_database,
+    "SELECT 1 AS operational_connection_ok FROM mottainai.company LIMIT 1",
 ).collect()
-if len(batch_rows) > 1:
-    raise RuntimeError("vw_published_batch must expose at most one current publication")
 
-for relation in ("vw_sales_daily_kpis", "vw_monthly_summary", "vw_critical_stock"):
-    spark.sql(f"SELECT * FROM {source_schema}.`{relation}` LIMIT 0").collect()
-print(f"Analytics connection OK; published batch rows: {len(batch_rows)}")
+published = remote_query(
+    analytics_connection,
+    analytics_database,
+    "SELECT batch_id, cutoff_at AS source_cutoff_at, finished_at AS published_at "
+    "FROM mottainai_analytics.job_log "
+    "WHERE job_name = 'operational_to_analytics_daily' "
+    "AND status = 'SUCCEEDED' AND batch_id IS NOT NULL "
+    "AND cutoff_at IS NOT NULL "
+    "AND metadata ->> 'publication_contract' = 'analytics_mart_v1' "
+    "ORDER BY finished_at DESC, job_id DESC LIMIT 1",
+).collect()
+if len(published) > 1:
+    raise RuntimeError("Analytical publication view returned more than one batch")
 
 for schema in ("mottainai_bronze", "mottainai_silver", "mottainai_gold", "mottainai_control"):
-    spark.sql(f"CREATE SCHEMA IF NOT EXISTS `{target}`.`{schema}`")
+    spark.sql(f"CREATE SCHEMA IF NOT EXISTS `{target_catalog}`.`{schema}`")
 
-spark.sql(f"""
-CREATE TABLE IF NOT EXISTS `{target}`.`mottainai_control`.`publication` (
-  pipeline STRING,
-  batch_id STRING,
-  source_cutoff_at TIMESTAMP,
-  source_published_at TIMESTAMP,
-  refreshed_at TIMESTAMP
-) USING DELTA
-""")
-print("BI schemas and publication control are ready")
+if not published or published[0]["batch_id"] is None:
+    print("No analytics_mart_v1 batch published yet; downstream notebooks will exit without changing Gold")
+else:
+    print(f"Published analytical batch: {published[0]['batch_id']}")

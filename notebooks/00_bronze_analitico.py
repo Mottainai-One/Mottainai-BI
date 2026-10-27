@@ -119,7 +119,16 @@ relations = (
 frames = {}
 source_counts = {}
 for relation in relations:
-    frame = remote_table(relation)
+    # Sale, customer and employee IDs are unnecessary for the BI dashboard.
+    # Minimize the Bronze copy rather than relying on Gold alone to hide them.
+    if relation == "fact_sales":
+        frame = remote_query("""
+            SELECT sale_id, sale_date, company_id, store_id, status,
+                   item_count, gross_amount, discount_amount, net_amount
+            FROM mottainai_analytics.fact_sales
+        """)
+    else:
+        frame = remote_table(relation)
     source_counts[relation] = frame.count()
     frames[relation] = frame
 
