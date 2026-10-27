@@ -47,7 +47,13 @@ resources:
             - task_key: bronze
           notebook_task:
             notebook_path: ./notebooks/02_refresh_medallion.py
+        - task_key: refresh_dashboard
+          depends_on:
+            - task_key: refresh_medallion
+          dashboard_task:
+            dashboard_id: 01f1d22904b81b738aef457d6a67f354
+            warehouse_id: 64bc14de5692c645
       schedule:
         quartz_cron_expression: '0 30 2 * * ?'
         timezone_id: America/Sao_Paulo
-        pause_status: PAUSED
+        pause_status: UNPAUSED

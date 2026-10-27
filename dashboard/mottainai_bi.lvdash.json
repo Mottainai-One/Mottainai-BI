@@ -1,0 +1,1017 @@
+{
+  "datasets": [
+    {
+      "name": "ds_period",
+      "displayName": "KPIs por loja e período",
+      "queryLines": [
+        "WITH limits AS (\n  SELECT CAST(:period.min AS DATE) AS start_date,\n         CAST(:period.max AS DATE) AS end_date\n), scoped AS (\n  SELECT s.store_id, s.net_revenue, s.sale_count, s.item_count,\n         s.sale_date BETWEEN l.start_date AND l.end_date AS is_current\n  FROM workspace.mottainai_gold.sales_daily_kpis s\n  CROSS JOIN limits l\n  WHERE s.sale_date BETWEEN\n    date_sub(l.start_date, datediff(l.end_date, l.start_date) + 1)\n    AND l.end_date\n)\nSELECT store_id,\n       SUM(CASE WHEN is_current THEN net_revenue ELSE 0 END) AS revenue_brl,\n       SUM(CASE WHEN NOT is_current THEN net_revenue ELSE 0 END) AS previous_revenue_brl,\n       SUM(CASE WHEN is_current THEN sale_count ELSE 0 END) AS sales_count,\n       SUM(CASE WHEN NOT is_current THEN sale_count ELSE 0 END) AS previous_sales_count,\n       SUM(CASE WHEN is_current THEN item_count ELSE 0 END) AS items_count\nFROM scoped GROUP BY store_id"
+      ],
+      "parameters": [
+        {
+          "keyword": "period",
+          "displayName": "Período das vendas",
+          "dataType": "DATE",
+          "complexType": "RANGE",
+          "defaultSelection": {
+            "range": {
+              "dataType": "DATE",
+              "min": {
+                "value": "now-30d/d"
+              },
+              "max": {
+                "value": "now/d"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds_sales",
+      "displayName": "Vendas diárias",
+      "queryLines": [
+        "SELECT sale_date, store_id, store_name, net_revenue AS revenue_brl,\n       sale_count, item_count\nFROM workspace.mottainai_gold.sales_daily_kpis"
+      ]
+    },
+    {
+      "name": "ds_tickets",
+      "displayName": "Tickets concluídos",
+      "queryLines": [
+        "SELECT t.sale_date, t.store_id, s.store_name, t.ticket_amount, t.item_count\nFROM workspace.mottainai_gold.ticket_distribution t\nJOIN workspace.mottainai_gold.stores s ON s.store_id = t.store_id"
+      ]
+    },
+    {
+      "name": "ds_risk",
+      "displayName": "Risco de estoque",
+      "queryLines": [
+        "SELECT store_id, store_name, product_id, product_name, consolidated_risk,\n       current_stock, days_of_coverage, value_at_expiration_risk\nFROM workspace.mottainai_gold.product_risk_ranking"
+      ]
+    },
+    {
+      "name": "ds_geo",
+      "displayName": "Lojas geográficas",
+      "queryLines": [
+        "SELECT store_id, store_name, city, state_code, latitude, longitude\nFROM workspace.mottainai_gold.store_geography"
+      ]
+    },
+    {
+      "name": "ds_freshness",
+      "displayName": "Frescor do lote",
+      "queryLines": [
+        "SELECT batch_id, source_cutoff_at, source_published_at, refreshed_at,\n       datediff(current_date(), CAST(source_cutoff_at AS DATE)) AS age_days\nFROM workspace.mottainai_gold.dashboard_freshness"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "executive",
+      "displayName": "Visão executiva",
+      "layout": [
+        {
+          "widget": {
+            "name": "executive-header",
+            "multilineTextboxSpec": {
+              "lines": [
+                "# Mottainai | Visão executiva\n",
+                "\n",
+                "Fotografia diária do banco analítico. Corte efetivo e lote no rodapé."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "revenue",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_period",
+                  "fields": [
+                    {
+                      "name": "value",
+                      "expression": "SUM(`revenue_brl`)"
+                    },
+                    {
+                      "name": "previous",
+                      "expression": "SUM(`previous_revenue_brl`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "value",
+                  "displayName": "Receita líquida",
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "BRL",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 2
+                    }
+                  }
+                },
+                "target": {
+                  "fieldName": "previous",
+                  "displayName": "Período anterior"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Receita líquida"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "sales",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_period",
+                  "fields": [
+                    {
+                      "name": "value",
+                      "expression": "SUM(`sales_count`)"
+                    },
+                    {
+                      "name": "previous",
+                      "expression": "SUM(`previous_sales_count`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "value",
+                  "displayName": "Vendas"
+                },
+                "target": {
+                  "fieldName": "previous",
+                  "displayName": "Período anterior"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Vendas"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 2,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "ticket",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_period",
+                  "fields": [
+                    {
+                      "name": "value",
+                      "expression": "TRY_DIVIDE(SUM(`revenue_brl`), SUM(`sales_count`))"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "value",
+                  "displayName": "Ticket médio",
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "BRL",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 2
+                    }
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Ticket médio"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 2,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "revenue-delta",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_period",
+                  "fields": [
+                    {
+                      "name": "value",
+                      "expression": "TRY_DIVIDE(SUM(`revenue_brl`) - SUM(`previous_revenue_brl`), SUM(`previous_revenue_brl`))"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "value",
+                  "displayName": "Variação de receita",
+                  "format": {
+                    "type": "number-percent",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 1
+                    }
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Variação de receita"
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 2,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "daily-trend",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_sales",
+                  "fields": [
+                    {
+                      "name": "sale_date",
+                      "expression": "`sale_date`"
+                    },
+                    {
+                      "name": "revenue",
+                      "expression": "SUM(`revenue_brl`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "sale_date",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "revenue",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "BRL",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 2
+                    }
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Receita por dia"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 8,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "store-bars",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_sales",
+                  "fields": [
+                    {
+                      "name": "store_name",
+                      "expression": "`store_name`"
+                    },
+                    {
+                      "name": "revenue",
+                      "expression": "SUM(`revenue_brl`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "revenue",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "BRL",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 2
+                    }
+                  }
+                },
+                "y": {
+                  "fieldName": "store_name",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Receita por loja"
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 5,
+            "width": 4,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "publication",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_freshness",
+                  "fields": [
+                    {
+                      "name": "batch_id",
+                      "expression": "`batch_id`"
+                    },
+                    {
+                      "name": "source_cutoff_at",
+                      "expression": "`source_cutoff_at`"
+                    },
+                    {
+                      "name": "source_published_at",
+                      "expression": "`source_published_at`"
+                    },
+                    {
+                      "name": "refreshed_at",
+                      "expression": "`refreshed_at`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "batch_id",
+                    "displayName": "Lote"
+                  },
+                  {
+                    "fieldName": "source_cutoff_at",
+                    "displayName": "Corte da origem"
+                  },
+                  {
+                    "fieldName": "source_published_at",
+                    "displayName": "Publicação no analítico"
+                  },
+                  {
+                    "fieldName": "refreshed_at",
+                    "displayName": "Atualização do BI"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Lote e frescor"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 11,
+            "width": 12,
+            "height": 4
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "stock-tickets",
+      "displayName": "Estoque e tickets",
+      "layout": [
+        {
+          "widget": {
+            "name": "detail-header",
+            "multilineTextboxSpec": {
+              "lines": [
+                "# Estoque e distribuição de vendas\n",
+                "\n",
+                "Estoque é uma fotografia; filtros de data afetam somente vendas. O mapa requer coordenadas cadastradas."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "risk-bars",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_risk",
+                  "fields": [
+                    {
+                      "name": "consolidated_risk",
+                      "expression": "`consolidated_risk`"
+                    },
+                    {
+                      "name": "products",
+                      "expression": "COUNT(*)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "consolidated_risk",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "custom-order",
+                      "orderedValues": [
+                        "CRITICAL",
+                        "HIGH",
+                        "MEDIUM",
+                        "LOW"
+                      ]
+                    }
+                  }
+                },
+                "y": {
+                  "fieldName": "products",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Produtos por nível de risco"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "ticket-hist",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_tickets",
+                  "fields": [
+                    {
+                      "name": "ticket_bin",
+                      "expression": "BIN_FLOOR(`ticket_amount`, 5)"
+                    },
+                    {
+                      "name": "frequency",
+                      "expression": "COUNT(*)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "histogram",
+              "encodings": {
+                "x": {
+                  "fieldName": "ticket_bin",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "y": {
+                  "fieldName": "frequency",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Distribuição dos tickets (faixas de R$ 5)"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 2,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "ticket-box",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_tickets",
+                  "fields": [
+                    {
+                      "name": "store_name",
+                      "expression": "`store_name`"
+                    },
+                    {
+                      "name": "ticket_amount",
+                      "expression": "`ticket_amount`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "box",
+              "encodings": {
+                "x": {
+                  "fieldName": "store_name",
+                  "displayName": "Loja"
+                },
+                "y": {
+                  "fieldName": "ticket_amount",
+                  "displayName": "Ticket (BRL)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Variação do ticket por loja"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 8,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "store-map",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_geo",
+                  "fields": [
+                    {
+                      "name": "store_name",
+                      "expression": "`store_name`"
+                    },
+                    {
+                      "name": "latitude",
+                      "expression": "`latitude`"
+                    },
+                    {
+                      "name": "longitude",
+                      "expression": "`longitude`"
+                    },
+                    {
+                      "name": "store_id",
+                      "expression": "`store_id`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "symbol-map",
+              "encodings": {
+                "coordinates": {
+                  "latitude": {
+                    "fieldName": "latitude"
+                  },
+                  "longitude": {
+                    "fieldName": "longitude"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Lojas com coordenadas"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 8,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "risk-details",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_risk",
+                  "fields": [
+                    {
+                      "name": "store_name",
+                      "expression": "`store_name`"
+                    },
+                    {
+                      "name": "product_name",
+                      "expression": "`product_name`"
+                    },
+                    {
+                      "name": "consolidated_risk",
+                      "expression": "`consolidated_risk`"
+                    },
+                    {
+                      "name": "current_stock",
+                      "expression": "`current_stock`"
+                    },
+                    {
+                      "name": "days_of_coverage",
+                      "expression": "`days_of_coverage`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "store_name",
+                    "displayName": "Loja"
+                  },
+                  {
+                    "fieldName": "product_name",
+                    "displayName": "Produto"
+                  },
+                  {
+                    "fieldName": "consolidated_risk",
+                    "displayName": "Risco"
+                  },
+                  {
+                    "fieldName": "current_stock",
+                    "displayName": "Estoque atual"
+                  },
+                  {
+                    "fieldName": "days_of_coverage",
+                    "displayName": "Cobertura (dias)"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Detalhes do risco"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 14,
+            "width": 12,
+            "height": 5
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "filters",
+      "displayName": "Filtros",
+      "layout": [
+        {
+          "widget": {
+            "name": "filter-period",
+            "queries": [
+              {
+                "name": "q_ds_period",
+                "query": {
+                  "datasetName": "ds_period",
+                  "disaggregated": false,
+                  "parameters": [
+                    {
+                      "name": "period",
+                      "keyword": "period"
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "q_ds_sales",
+                "query": {
+                  "datasetName": "ds_sales",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "name": "sale_date",
+                      "expression": "`sale_date`"
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "q_ds_tickets",
+                "query": {
+                  "datasetName": "ds_tickets",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "name": "sale_date",
+                      "expression": "`sale_date`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-date-range-picker",
+              "encodings": {
+                "fields": [
+                  {
+                    "parameterName": "period",
+                    "queryName": "q_ds_period"
+                  },
+                  {
+                    "fieldName": "sale_date",
+                    "queryName": "q_ds_sales"
+                  },
+                  {
+                    "fieldName": "sale_date",
+                    "queryName": "q_ds_tickets"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Período das vendas"
+              },
+              "selection": {
+                "defaultSelection": {
+                  "range": {
+                    "dataType": "DATE",
+                    "min": {
+                      "value": "now-30d/d"
+                    },
+                    "max": {
+                      "value": "now/d"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 5,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "filter-store",
+            "queries": [
+              {
+                "name": "q_ds_period",
+                "query": {
+                  "datasetName": "ds_period",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "name": "store_id",
+                      "expression": "`store_id`"
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "q_ds_sales",
+                "query": {
+                  "datasetName": "ds_sales",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "name": "store_id",
+                      "expression": "`store_id`"
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "q_ds_tickets",
+                "query": {
+                  "datasetName": "ds_tickets",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "name": "store_id",
+                      "expression": "`store_id`"
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "q_ds_risk",
+                "query": {
+                  "datasetName": "ds_risk",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "name": "store_id",
+                      "expression": "`store_id`"
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "q_ds_geo",
+                "query": {
+                  "datasetName": "ds_geo",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "name": "store_id",
+                      "expression": "`store_id`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "store_id",
+                    "queryName": "q_ds_period"
+                  },
+                  {
+                    "fieldName": "store_id",
+                    "queryName": "q_ds_sales"
+                  },
+                  {
+                    "fieldName": "store_id",
+                    "queryName": "q_ds_tickets"
+                  },
+                  {
+                    "fieldName": "store_id",
+                    "queryName": "q_ds_risk"
+                  },
+                  {
+                    "fieldName": "store_id",
+                    "queryName": "q_ds_geo"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Loja"
+              }
+            }
+          },
+          "position": {
+            "x": 5,
+            "y": 0,
+            "width": 5,
+            "height": 2
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_GLOBAL_FILTERS",
+      "layoutVersion": "GRID_V1"
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "visualizationColors": [
+        "#235347",
+        "#A9C86C",
+        "#DF9C46",
+        "#D75D52",
+        "#548B9B"
+      ],
+      "widgetHeaderAlignment": "LEFT"
+    }
+  }
+}

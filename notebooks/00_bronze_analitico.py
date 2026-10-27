@@ -62,11 +62,11 @@ print(f"Conexão PostgreSQL confirmada: {database_name}")
 publication = remote_query("""
     SELECT batch_id, cutoff_at AS source_cutoff_at, finished_at AS published_at
     FROM mottainai_analytics.job_log
-    WHERE job_name = 'operational_to_analytics_daily'
-      AND status = 'SUCCEEDED'
+    WHERE job_name = $$operational_to_analytics_daily$$
+      AND status = $$SUCCEEDED$$
       AND batch_id IS NOT NULL
       AND cutoff_at IS NOT NULL
-      AND metadata ->> 'publication_contract' = 'analytics_mart_v1'
+      AND metadata ->> $$publication_contract$$ = $$analytics_mart_v1$$
     ORDER BY finished_at DESC, job_id DESC
     LIMIT 1
 """).collect()
@@ -154,9 +154,9 @@ for relation, frame in frames.items():
 
 latest = remote_query("""
     SELECT batch_id FROM mottainai_analytics.job_log
-    WHERE job_name = 'operational_to_analytics_daily'
-      AND status = 'SUCCEEDED'
-      AND metadata ->> 'publication_contract' = 'analytics_mart_v1'
+    WHERE job_name = $$operational_to_analytics_daily$$
+      AND status = $$SUCCEEDED$$
+      AND metadata ->> $$publication_contract$$ = $$analytics_mart_v1$$
     ORDER BY finished_at DESC, job_id DESC LIMIT 1
 """).first()
 if latest is None or str(latest["batch_id"]) != batch:

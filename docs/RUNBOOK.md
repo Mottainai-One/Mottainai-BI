@@ -17,7 +17,7 @@ databricks bundle deploy
 databricks bundle run analytics_to_medallion
 ```
 
-No workspace, também é possível importar os três arquivos de `notebooks/` e criar um job de três tarefas na ordem `preflight` → `bronze` → `refresh_medallion`, com parâmetros de job iguais aos de `databricks.yml`. Use serverless. Não ativar a agenda antes da primeira execução manual aprovada com lote válido. O cron `02:30` é uma contingência; o RPA é o dono da publicação às `02:00`.
+O job implantado tem quatro tarefas na ordem `preflight` → `bronze` → `refresh_medallion` → `refresh_dashboard`. O dashboard está publicado com ID `01f1d22904b81b738aef457d6a67f354`. O cron de 02:30 em `America/Sao_Paulo` está ativo. O RPA é o dono da publicação às 02:00; a margem de 30 minutos permite concluir sua carga antes da leitura do Databricks. Se a carga terminar depois, execute novamente `databricks jobs run-now 731348243647869` após confirmar `vw_published_batch`.
 
 ## Validação de dados
 
@@ -54,7 +54,7 @@ Essas duas consultas PostgreSQL devem ser executadas no database `MOTTAINAI_ANAL
 
 ## Dashboard
 
-Crie os datasets de `dashboard/datasets/` no AI/BI Dashboard. Configure `:period` como Date Range (padrão últimos 30 dias) e `:store_id` como Numeric Integer opcional. Configure os widgets descritos em `dashboard/README.md`, execute cada dataset, confira os resultados e publique para a equipe com permissão mínima. Após obter o ID do dashboard, acrescente uma tarefa `Dashboard` ao mesmo job, dependente de `refresh_medallion`, para atualizar o resultado publicado após Gold. Não habilitar compartilhamento público por padrão.
+O dashboard já está publicado: [Mottainai | BI Executivo e Estoque](https://dbc-38ac8920-cbf4.cloud.databricks.com/sql/dashboardsv3/01f1d22904b81b738aef457d6a67f354?o=7474654317437663). A fonte versionada é `dashboard/mottainai_bi.lvdash.json`; execute `python dashboard/build_dashboard.py` para regenerá-la após alterar os SQLs. O job atualiza o painel após publicar Gold. A publicação usa permissões de dados individuais (`embed_credentials=false`); conceda a cada leitor `SELECT` nas views Gold e uso do SQL warehouse, além de acesso ao dashboard. Não habilite compartilhamento público por padrão.
 
 ## Falha e reprocessamento
 

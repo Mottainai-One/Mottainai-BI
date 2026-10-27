@@ -65,10 +65,10 @@ published = remote_query(
     analytics_database,
     "SELECT batch_id, cutoff_at AS source_cutoff_at, finished_at AS published_at "
     "FROM mottainai_analytics.job_log "
-    "WHERE job_name = 'operational_to_analytics_daily' "
-    "AND status = 'SUCCEEDED' AND batch_id IS NOT NULL "
+    "WHERE job_name = $$operational_to_analytics_daily$$ "
+    "AND status = $$SUCCEEDED$$ AND batch_id IS NOT NULL "
     "AND cutoff_at IS NOT NULL "
-    "AND metadata ->> 'publication_contract' = 'analytics_mart_v1' "
+    "AND metadata ->> $$publication_contract$$ = $$analytics_mart_v1$$ "
     "ORDER BY finished_at DESC, job_id DESC LIMIT 1",
 ).collect()
 if len(published) > 1:
