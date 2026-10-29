@@ -14,13 +14,13 @@ variables:
     default: MOTTAINAI_ANALITICO
   target_catalog:
     description: Managed Unity Catalog destination for Delta tables.
-    default: workspace
+    default: motta_analytics
 
 resources:
   jobs:
     analytics_to_medallion:
       name: mottainai-analytics-to-medallion
-      description: Read the last committed analytical batch and publish validated Bronze, Silver and Gold snapshots.
+      description: Publish one committed analytical batch through separate Bronze, Silver and Gold tasks, then refresh BI.
       max_concurrent_runs: 1
       parameters:
         - name: operational_connection
@@ -42,14 +42,19 @@ resources:
             - task_key: preflight
           notebook_task:
             notebook_path: ./notebooks/00_bronze_analitico.py
-        - task_key: refresh_medallion
+        - task_key: silver
           depends_on:
             - task_key: bronze
           notebook_task:
-            notebook_path: ./notebooks/02_refresh_medallion.py
+            notebook_path: ./notebooks/01_silver.py
+        - task_key: gold
+          depends_on:
+            - task_key: silver
+          notebook_task:
+            notebook_path: ./notebooks/02_gold.py
         - task_key: refresh_dashboard
           depends_on:
-            - task_key: refresh_medallion
+            - task_key: gold
           dashboard_task:
             dashboard_id: 01f1d22904b81b738aef457d6a67f354
             warehouse_id: 64bc14de5692c645

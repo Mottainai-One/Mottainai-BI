@@ -1,24 +1,24 @@
 # Mottainai BI — Databricks
 
-Este repositório versiona o pipeline e as consultas do dashboard de Business Intelligence. A fonte de negócio é o banco físico `MOTTAINAI_ANALITICO` no Aiven. O banco `MOTTAINAI` recebe transações; o RPA publica uma fotografia no analítico às 02:00 de São Paulo. O Databricks lê **apenas um lote analítico concluído**, transforma Bronze → Silver → Gold e o dashboard consulta somente Gold.
+O BI consome a fotografia diária de `MOTTAINAI_ANALITICO`, publicada pelo RPA a partir de `MOTTAINAI` às 02:00 em São Paulo. O job Databricks inicia às 02:30 e executa cinco tarefas sequenciais:
 
 ```text
-MOTTAINAI → RPA transacional → MOTTAINAI_ANALITICO
-                               → preflight → Bronze → Silver → Gold → dashboard
+preflight → bronze → silver → gold → refresh_dashboard
 ```
 
-## Entrega acadêmica
+- **Bronze:** cópia Delta do lote analítico publicado, com contagens reconciliadas.
+- **Silver:** dimensões e fatos tipados, limpeza e testes de qualidade, com marcador de publicação próprio.
+- **Gold:** métricas comerciais e de estoque derivadas do Silver, com um único lote visível ao dashboard.
 
-- [Relatório gerencial](docs/RELATORIO_GERENCIAL.md): base, problema, limpeza, definições de KPIs, limites e evidências.
-- [Entrega e evidências por requisito](docs/ENTREGA_BI.md): matriz da disciplina, links para os runs e resultados observados.
-- [Datasets e especificação do dashboard](dashboard/README.md): cards, linha, barras, histograma, boxplot, mapa condicional, filtros.
-- [Runbook](docs/RUNBOOK.md): implantação, execução, validação e recuperação.
-- [Bundle Databricks](databricks.yml): job serverless com quatro tarefas sequenciais e agenda ativa às 02:30 `America/Sao_Paulo`.
+As três camadas ficam em `motta_analytics.bronze`, `motta_analytics.silver` e `motta_analytics.gold`; `motta_analytics.control` guarda os marcadores. O dashboard consulta apenas Gold. O banco operacional é usado no preflight para conferir a conexão, sem alimentar os gráficos diretamente. Credenciais ficam nas conexões Unity Catalog.
 
-Os notebooks usam `remote_query` nas conexões Unity Catalog `conection_motta_operacional` e `motta_analytics`, indicando explicitamente os databases `MOTTAINAI` e `MOTTAINAI_ANALITICO`. Isso evita o limite de 100 objetos por schema do catálogo estrangeiro no Free Edition. Usuário e senha permanecem na conexão do Databricks, não neste repositório.
+## Entregáveis
 
-## Estado verificável
+- [Dashboard publicado](https://dbc-38ac8920-cbf4.cloud.databricks.com/sql/dashboardsv3/01f1d22904b81b738aef457d6a67f354/published?o=7474654317437663)
+- [Job Databricks](https://dbc-38ac8920-cbf4.cloud.databricks.com/jobs/731348243647869?o=7474654317437663)
+- [Execução validada, cinco tarefas](https://dbc-38ac8920-cbf4.cloud.databricks.com/jobs/731348243647869/runs/97850894011189?o=7474654317437663)
+- [Relatório gerencial](docs/RELATORIO_GERENCIAL.md), [matriz de evidências](docs/ENTREGA_BI.md), [especificação do painel](dashboard/README.md) e [runbook](docs/RUNBOOK.md).
 
-O [job 731348243647869](https://dbc-38ac8920-cbf4.cloud.databricks.com/jobs/731348243647869?o=7474654317437663) foi implantado e o [run de quatro tarefas](https://dbc-38ac8920-cbf4.cloud.databricks.com/jobs/731348243647869/runs/533702856364216?o=7474654317437663) terminou `SUCCESS`, incluindo `refresh_dashboard`. O [dashboard publicado](https://dbc-38ac8920-cbf4.cloud.databricks.com/sql/dashboardsv3/01f1d22904b81b738aef457d6a67f354?o=7474654317437663) possui duas páginas de visualização e filtros globais. Bronze e Silver contêm 101 vendas do lote publicado; a origem e Gold têm o mesmo `batch_id`. Os detalhes e limites da amostra estão em [ENTREGA_BI](docs/ENTREGA_BI.md).
+O dashboard apresenta três páginas: visão executiva, estoque e distribuição/qualidade. Há filtros globais de período e loja. A amostra atual contém somente um dia de vendas e uma loja vendedora; comparação temporal e dispersão devem ser interpretadas como testes de visualização até que exista histórico suficiente. O mapa permanece condicional porque a origem não possui coordenadas.
 
-Uma atualização fora das 02:00 exige chamar o job Databricks após o commit do RPA. A agenda 02:30 cobre o ciclo diário, mas não garante atualização por evento. A tarefa `Dashboard` já depende de `refresh_medallion` e atualiza o resultado publicado. A correção do RPA está na [PR #11](https://github.com/Mottainai-One/Mottanai-RPA/pull/11) e precisa de revisão/merge para entrar no agendamento da branch principal.
+A [PR RPA #11](https://github.com/Mottainai-One/Mottanai-RPA/pull/11) contém a correção de publicação diária e ainda depende do fluxo de revisão/merge da equipe. Uma carga concluída fora da janela diária exige executar o job Databricks manualmente após confirmar o novo lote.

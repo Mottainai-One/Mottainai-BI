@@ -1,42 +1,25 @@
 # Dashboard Mottainai — contrato de publicação
 
-## Página 1: Visão executiva
+O painel publicado usa apenas as views em `motta_analytics.gold`. A definição é gerada por `python dashboard/build_dashboard.py` em `mottainai_bi.lvdash.json` e mantém o mesmo ID no workspace.
 
-| Elemento | Dataset | Configuração |
+## Páginas
+
+| Página | Elementos | Fonte |
 |---|---|---|
-| Receita líquida | `01_kpi_period.sql` | Counter `revenue_brl`, moeda BRL |
-| Vendas | `01_kpi_period.sql` | Counter `sales_count` |
-| Ticket médio | `01_kpi_period.sql` | Counter `average_ticket_brl`, BRL; vazio se não houver vendas |
-| Desvio de receita | `01_kpi_period.sql` | Counter `revenue_change_pct`, percentual; referência é período anterior de mesma duração |
-| Evolução diária | `02_daily_sales.sql` | Line: X `sale_date`, Y `revenue_brl`; tooltip `sales_count` |
-| Comparação entre lojas | `03_store_comparison.sql` | Bar: X `store_name`, Y `revenue_brl`, ordenação descendente |
-| Frescor da fotografia | `07_freshness.sql` | Table/text: `source_cutoff_at`, `source_published_at`, `refreshed_at`, `batch_id`, `age_days` |
+| Visão executiva | Receita líquida, vendas concluídas, ticket médio, comparação com período anterior, evolução diária, receita por loja, produtos vendidos, frescor | `sales_daily`, `sales_tickets`, `product_sales_daily`, `dashboard_freshness` |
+| Estoque | Unidades em mãos, disponíveis, valor estimado a custo médio, vencimento em 30 dias, produtos e lotes | `inventory_health`, `inventory_batches` |
+| Distribuição e qualidade | Histograma e boxplot de tickets, contagens de validação Silver e limites da amostra | `sales_tickets`, `quality_summary` |
 
-## Página 2: Estoque e distribuição
+Filtros globais: período e loja. O período afeta métricas de vendas; estoque representa o lote mais recente e não deve mudar quando a data da venda muda. A variação percentual de receita fica nula quando o período anterior tem receita zero.
 
-| Elemento | Dataset | Configuração |
-|---|---|---|
-| Risco por severidade | `05_stock_risk.sql` | Bar: X `consolidated_risk`, Y `products`; tooltip `expiration_value_brl` |
-| Distribuição dos tickets | `04_ticket_distribution.sql` | Histogram: X `ticket_amount`, count no eixo Y, faixa automática |
-| Variação do ticket por loja | `04_ticket_distribution.sql` | Box: X `store_name`, Y `ticket_amount`; exibir mediana e quartis |
-| Lojas geográficas | `06_store_map.sql` | Point map: latitude/longitude; tamanho `revenue_brl`; mostrar apenas se houver coordenadas |
+## Regras de interpretação
 
-## Filtros interativos
+- Venda = transação `COMPLETED`; receita = `net_amount` reconciliada com subtotais dos itens.
+- Estoque = soma dos lotes publicados; valor = quantidade disponível vezes custo médio. É valor de estoque, não receita.
+- Frescor expõe `batch_id`, corte e publicação, para distinguir fotografia diária de tempo real.
+- A origem tem somente um dia de vendas e uma loja vendedora. Linha, barras, histograma e boxplot funcionam, mas não justificam tendência ou dispersão de mercado.
+- Nenhuma loja possui coordenadas. O mapa é condicional no requisito da disciplina e foi omitido do painel até haver geocodificação confiável; `06_store_map.sql` permanece como consulta opcional.
 
-- `:period`: **Date Range**, padrão de 30 dias (`now-30d/d` a `now/d`). Conecte às seis consultas que o usam. O filtro age antes da agregação, portanto KPIs e gráficos respondem ao mesmo intervalo.
-- `:store_id`: **Numeric Integer**, seleção única, vazio = todas as lojas. Criar uma lista de opções com `SELECT store_id, store_name FROM workspace.mottainai_gold.stores ORDER BY store_name`; não permitir entrada de nome de tabela ou catálogo.
-- Estoque e frescor são fotografias do lote mais recente. O filtro de período não altera seu valor; explicar isso na legenda para evitar confusão.
+## Aceite
 
-As consultas de distribuição usam vendas concluídas. `04_ticket_distribution.sql` liga à view `stores`, que inclui lojas sem coordenadas. O mapa, por definição, só usa `store_geography`. Se as consultas não retornarem linhas, mostrar “Sem dados para o período” e o horário da última publicação; nunca criar métricas sintéticas no painel principal.
-
-## Critérios de aceite do painel publicado
-
-1. Cada dataset usa somente `workspace.mottainai_gold`, sem consulta ao operacional nem à conexão federada.
-2. Alterar período e loja modifica cards, linha, barras, histograma e boxplot de maneira coerente.
-3. Cartões de desvio não exibem percentual quando o denominador anterior é zero.
-4. O `batch_id` mostrado é igual ao de `MOTTAINAI_ANALITICO.mottainai_analytics.vw_published_batch`.
-5. Um run falho não muda o `batch_id` de Gold; um run bem-sucedido publica todas as visualizações do mesmo lote.
-6. O dashboard exibe legenda “Fotografia diária, corte às 02:00 de São Paulo (horário efetivo na tabela de frescor)”.
-7. Guardar o link publicado e imagens da configuração e dos resultados no documento de entrega. Publicar com as permissões mínimas necessárias à equipe; não habilitar acesso público sem decisão explícita.
-
-**Estado em 27/10/2026:** [painel publicado](https://dbc-38ac8920-cbf4.cloud.databricks.com/sql/dashboardsv3/01f1d22904b81b738aef457d6a67f354?o=7474654317437663), definição versionada em `mottainai_bi.lvdash.json`. O run Databricks `533702856364216` terminou com as quatro tarefas aprovadas, incluindo `refresh_dashboard`. Os seis datasets executaram com sucesso no SQL warehouse. O mapa não tem pontos porque ainda não há coordenadas; o histórico de vendas cobre só 20/10/2026, e seus 101 tickets têm o mesmo valor. A inspeção visual do painel pela interface deve ser registrada pela equipe na apresentação; a validação até aqui foi por API, SQL e execução do job.
+Os oito datasets embutidos foram executados no SQL Warehouse. O job [97850894011189](https://dbc-38ac8920-cbf4.cloud.databricks.com/jobs/731348243647869/runs/97850894011189?o=7474654317437663) concluiu as cinco tarefas, inclusive atualização do painel. A publicação usa `embed_credentials=false`; cada leitor deve receber acesso ao dashboard, ao warehouse e `SELECT` em Gold. Ainda falta registrar teste visual e dos filtros na interface com uma sessão autenticada.

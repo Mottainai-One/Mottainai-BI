@@ -38,7 +38,7 @@ def chart(name, dataset, kind, version, fields, encodings, title, aggregated=Tru
     }
 
 
-def counter(name, title, expression, target=None, fmt=None):
+def counter(name, title, expression, target=None, fmt=None, dataset="ds_period"):
     fields = [field("value", expression)]
     encoding = {"value": {"fieldName": "value", "displayName": title}}
     if fmt:
@@ -46,7 +46,7 @@ def counter(name, title, expression, target=None, fmt=None):
     if target:
         fields.append(field("previous", target))
         encoding["target"] = {"fieldName": "previous", "displayName": "Período anterior"}
-    return chart(name, "ds_period", "counter", 2, fields, encoding, title)
+    return chart(name, dataset, "counter", 2, fields, encoding, title)
 
 
 def filter_widget(name, kind, title, bindings):
@@ -73,84 +73,110 @@ def filter_widget(name, kind, title, bindings):
 
 
 datasets = [
-    {"name": "ds_period", "displayName": "KPIs por loja e período", "queryLines": [sql_file("01_kpi_period.sql")],
+    {"name": "ds_period", "displayName": "KPIs de vendas por período", "queryLines": [sql_file("01_kpi_period.sql")],
      "parameters": [{"keyword": "period", "displayName": "Período das vendas", "dataType": "DATE", "complexType": "RANGE",
                      "defaultSelection": {"range": {"dataType": "DATE",
                                                     "min": {"value": "now-30d/d"},
                                                     "max": {"value": "now/d"}}}}]},
     {"name": "ds_sales", "displayName": "Vendas diárias", "queryLines": [sql_file("02_daily_sales.sql")]},
     {"name": "ds_tickets", "displayName": "Tickets concluídos", "queryLines": [sql_file("04_ticket_distribution.sql")]},
-    {"name": "ds_risk", "displayName": "Risco de estoque", "queryLines": [sql_file("05_stock_risk.sql")]},
-    {"name": "ds_geo", "displayName": "Lojas geográficas", "queryLines": [sql_file("06_store_map.sql")]},
+    {"name": "ds_inventory", "displayName": "Saúde do estoque", "queryLines": [sql_file("05_stock_risk.sql")]},
+    {"name": "ds_product", "displayName": "Vendas por produto", "queryLines": [sql_file("08_product_sales.sql")]},
+    {"name": "ds_batches", "displayName": "Lotes de estoque", "queryLines": [sql_file("09_inventory_batches.sql")]},
     {"name": "ds_freshness", "displayName": "Frescor do lote", "queryLines": [sql_file("07_freshness.sql")]},
+    {"name": "ds_quality", "displayName": "Qualidade Silver", "queryLines": [sql_file("10_quality.sql")]},
 ]
 
 executive = [
-    layout(text_widget("executive-header", ["# Mottainai | Visão executiva\n", "\n", "Fotografia diária do banco analítico. Corte efetivo e lote no rodapé."]), 0, 0, 12, 2),
-    layout(counter("revenue", "Receita líquida", "SUM(`revenue_brl`)", "SUM(`previous_revenue_brl`)", BRL), 0, 2, 3, 3),
-    layout(counter("sales", "Vendas", "SUM(`sales_count`)", "SUM(`previous_sales_count`)"), 3, 2, 3, 3),
-    layout(counter("ticket", "Ticket médio", "TRY_DIVIDE(SUM(`revenue_brl`), SUM(`sales_count`))", fmt=BRL), 6, 2, 3, 3),
-    layout(counter("revenue-delta", "Variação de receita", "TRY_DIVIDE(SUM(`revenue_brl`) - SUM(`previous_revenue_brl`), SUM(`previous_revenue_brl`))", fmt=PERCENT), 9, 2, 3, 3),
+    layout(text_widget("executive-header", ["# Mottainai  |  Visão executiva\n", "\n", "Vendas concluídas do último lote analítico. Filtros de período e loja no topo; estoque usa a fotografia mais recente."]), 0, 0, 12, 2),
+    layout(counter("revenue", "Receita líquida · BRL", "SUM(`revenue_brl`)", fmt=BRL), 0, 2, 3, 3),
+    layout(counter("sales", "Vendas concluídas", "SUM(`sales_count`)"), 3, 2, 3, 3),
+    layout(counter("ticket", "Ticket médio · BRL", "TRY_DIVIDE(SUM(`revenue_brl`), SUM(`sales_count`))", fmt=BRL), 6, 2, 3, 3),
+    layout(counter("revenue-delta", "Variação vs. período anterior", "TRY_DIVIDE(SUM(`revenue_brl`) - SUM(`previous_revenue_brl`), SUM(`previous_revenue_brl`))", fmt=PERCENT), 9, 2, 3, 3),
+    layout(text_widget("history-note", ["**Leitura responsável:** o histórico atual tem somente um dia de vendas e uma loja com movimento. A variação fica sem valor enquanto o período anterior não tiver receita; não interprete a linha como tendência antes de haver mais datas."]), 0, 5, 12, 2),
     layout(chart("daily-trend", "ds_sales", "line", 3,
                  [field("sale_date"), field("revenue", "SUM(`revenue_brl`)")],
                  {"x": {"fieldName": "sale_date", "scale": {"type": "temporal"}},
                   "y": {"fieldName": "revenue", "scale": {"type": "quantitative"}, "format": BRL}},
-                 "Receita por dia"), 0, 5, 8, 6),
+                 "Receita por dia"), 0, 7, 6, 6),
     layout(chart("store-bars", "ds_sales", "bar", 3,
                  [field("store_name"), field("revenue", "SUM(`revenue_brl`)")],
                  {"x": {"fieldName": "revenue", "scale": {"type": "quantitative"}, "format": BRL},
                   "y": {"fieldName": "store_name", "scale": {"type": "categorical"}}},
-                 "Receita por loja"), 8, 5, 4, 6),
+                 "Receita por loja com vendas"), 6, 7, 6, 6),
+    layout(chart("product-sales", "ds_product", "table", 2,
+                 [field("product_name"), field("category_name"), field("units_sold"), field("net_revenue")],
+                 {"columns": [{"fieldName": "product_name", "displayName": "Produto"},
+                              {"fieldName": "category_name", "displayName": "Categoria"},
+                              {"fieldName": "units_sold", "displayName": "Unidades"},
+                              {"fieldName": "net_revenue", "displayName": "Receita (BRL)", "format": BRL}]},
+                 "Produtos vendidos", aggregated=False), 0, 13, 12, 4),
     layout(chart("publication", "ds_freshness", "table", 2,
-                 [field("batch_id"), field("source_cutoff_at"), field("source_published_at"), field("refreshed_at")],
+                 [field("batch_id"), field("model_version"), field("source_cutoff_at"), field("source_published_at"), field("refreshed_at")],
                  {"columns": [{"fieldName": "batch_id", "displayName": "Lote"},
+                              {"fieldName": "model_version", "displayName": "Modelo"},
                               {"fieldName": "source_cutoff_at", "displayName": "Corte da origem"},
                               {"fieldName": "source_published_at", "displayName": "Publicação no analítico"},
                               {"fieldName": "refreshed_at", "displayName": "Atualização do BI"}]},
-                 "Lote e frescor", aggregated=False), 0, 11, 12, 4),
+                 "Linhagem e frescor", aggregated=False), 0, 17, 12, 4),
 ]
 
-stock_and_tickets = [
-    layout(text_widget("detail-header", ["# Estoque e distribuição de vendas\n", "\n", "Estoque é uma fotografia; filtros de data afetam somente vendas. O mapa requer coordenadas cadastradas."]), 0, 0, 12, 2),
-    layout(chart("risk-bars", "ds_risk", "bar", 3,
-                 [field("consolidated_risk"), field("products", "COUNT(*)")],
-                 {"x": {"fieldName": "consolidated_risk", "scale": {"type": "categorical",
-                        "sort": {"by": "custom-order", "orderedValues": ["CRITICAL", "HIGH", "MEDIUM", "LOW"]}}},
-                  "y": {"fieldName": "products", "scale": {"type": "quantitative"}}},
-                 "Produtos por nível de risco"), 0, 2, 6, 6),
+stock = [
+    layout(text_widget("stock-header", ["# Estoque  |  Disponibilidade e valor\n", "\n", "Fotografia do produto por loja e lote; usa a data mais recente de cada produto. O filtro de data afeta vendas, não esta página."]), 0, 0, 12, 2),
+    layout(counter("on-hand", "Unidades em estoque", "SUM(`on_hand_quantity`)", dataset="ds_inventory"), 0, 2, 3, 3),
+    layout(counter("available", "Unidades disponíveis", "SUM(`available_quantity`)", dataset="ds_inventory"), 3, 2, 3, 3),
+    layout(counter("stock-value", "Valor em estoque · BRL", "SUM(`stock_value`)", fmt=BRL, dataset="ds_inventory"), 6, 2, 3, 3),
+    layout(counter("expiring", "Vence em 30 dias · BRL", "SUM(`value_expiring_30d`)", fmt=BRL, dataset="ds_inventory"), 9, 2, 3, 3),
+    layout(chart("stock-bars", "ds_inventory", "bar", 3,
+                 [field("product_name"), field("available", "SUM(`available_quantity`)")],
+                 {"x": {"fieldName": "available", "scale": {"type": "quantitative"}},
+                  "y": {"fieldName": "product_name", "scale": {"type": "categorical"}}},
+                 "Disponível por produto"), 0, 5, 6, 6),
+    layout(chart("stock-value-bars", "ds_inventory", "bar", 3,
+                 [field("product_name"), field("value", "SUM(`stock_value`)")],
+                 {"x": {"fieldName": "value", "scale": {"type": "quantitative"}, "format": BRL},
+                  "y": {"fieldName": "product_name", "scale": {"type": "categorical"}}},
+                 "Valor por produto"), 6, 5, 6, 6),
+    layout(chart("batch-details", "ds_batches", "table", 2,
+                 [field("store_name"), field("product_name"), field("source_batch_id"),
+                  field("available_quantity"), field("stock_value"), field("expiration_date")],
+                 {"columns": [{"fieldName": "store_name", "displayName": "Loja"},
+                              {"fieldName": "product_name", "displayName": "Produto"},
+                              {"fieldName": "source_batch_id", "displayName": "Lote"},
+                              {"fieldName": "available_quantity", "displayName": "Disponível"},
+                              {"fieldName": "stock_value", "displayName": "Valor (BRL)", "format": BRL},
+                              {"fieldName": "expiration_date", "displayName": "Validade"}]},
+                 "Lotes e vencimentos", aggregated=False), 0, 11, 12, 6),
+]
+
+distribution = [
+    layout(text_widget("distribution-header", ["# Distribuição e qualidade\n", "\n", "Histograma e boxplot mostram os tickets observados. Com apenas um preço e uma loja vendedora, ainda não há dispersão real; a qualidade registra o que a Silver validou."]), 0, 0, 12, 2),
     layout(chart("ticket-hist", "ds_tickets", "histogram", 3,
                  [field("ticket_bin", "BIN_FLOOR(`ticket_amount`, 5)"), field("frequency", "COUNT(*)")],
                  {"x": {"fieldName": "ticket_bin", "scale": {"type": "quantitative"}},
                   "y": {"fieldName": "frequency", "scale": {"type": "quantitative"}}},
-                 "Distribuição dos tickets (faixas de R$ 5)"), 6, 2, 6, 6),
+                 "Tickets por faixa de R$ 5"), 0, 2, 6, 6),
     layout(chart("ticket-box", "ds_tickets", "box", 1,
                  [field("store_name"), field("ticket_amount")],
                  {"x": {"fieldName": "store_name", "displayName": "Loja"},
                   "y": {"fieldName": "ticket_amount", "displayName": "Ticket (BRL)", "scale": {"type": "quantitative"}}},
-                 "Variação do ticket por loja", aggregated=False), 0, 8, 6, 6),
-    layout(chart("store-map", "ds_geo", "symbol-map", 2,
-                 [field("store_name"), field("latitude"), field("longitude"), field("store_id")],
-                 {"coordinates": {"latitude": {"fieldName": "latitude"},
-                                  "longitude": {"fieldName": "longitude"}}},
-                 "Lojas com coordenadas", aggregated=False), 6, 8, 6, 6),
-    layout(chart("risk-details", "ds_risk", "table", 2,
-                 [field("store_name"), field("product_name"), field("consolidated_risk"),
-                  field("current_stock"), field("days_of_coverage")],
-                 {"columns": [{"fieldName": "store_name", "displayName": "Loja"},
-                              {"fieldName": "product_name", "displayName": "Produto"},
-                              {"fieldName": "consolidated_risk", "displayName": "Risco"},
-                              {"fieldName": "current_stock", "displayName": "Estoque atual"},
-                              {"fieldName": "days_of_coverage", "displayName": "Cobertura (dias)"}]},
-                 "Detalhes do risco", aggregated=False), 0, 14, 12, 5),
+                 "Ticket por loja", aggregated=False), 6, 2, 6, 6),
+    layout(chart("quality-table", "ds_quality", "table", 2,
+                 [field("relation_name"), field("checked_rows"), field("invalid_rows"), field("checked_at")],
+                 {"columns": [{"fieldName": "relation_name", "displayName": "Regra / relação"},
+                              {"fieldName": "checked_rows", "displayName": "Linhas verificadas"},
+                              {"fieldName": "invalid_rows", "displayName": "Falhas"},
+                              {"fieldName": "checked_at", "displayName": "Verificado em"}]},
+                 "Validação da Silver", aggregated=False), 0, 8, 12, 7),
 ]
 
 filters = [
     layout(filter_widget("filter-period", "filter-date-range-picker", "Período das vendas",
                          [("ds_period", "period", True), ("ds_sales", "sale_date", False),
-                          ("ds_tickets", "sale_date", False)]), 0, 0, 5, 2),
+                          ("ds_tickets", "sale_date", False), ("ds_product", "sale_date", False)]), 0, 0, 6, 2),
     layout(filter_widget("filter-store", "filter-multi-select", "Loja",
                          [(name, "store_id", False) for name in
-                          ("ds_period", "ds_sales", "ds_tickets", "ds_risk", "ds_geo")]), 5, 0, 5, 2),
+                          ("ds_period", "ds_sales", "ds_tickets", "ds_product", "ds_inventory", "ds_batches")]), 6, 0, 6, 2),
 ]
 
 dashboard = {
@@ -158,13 +184,22 @@ dashboard = {
     "pages": [
         {"name": "executive", "displayName": "Visão executiva", "layout": executive,
          "pageType": "PAGE_TYPE_CANVAS", "layoutVersion": "GRID_V1"},
-        {"name": "stock-tickets", "displayName": "Estoque e tickets", "layout": stock_and_tickets,
+        {"name": "stock", "displayName": "Estoque", "layout": stock,
+         "pageType": "PAGE_TYPE_CANVAS", "layoutVersion": "GRID_V1"},
+        {"name": "distribution", "displayName": "Distribuição e qualidade", "layout": distribution,
          "pageType": "PAGE_TYPE_CANVAS", "layoutVersion": "GRID_V1"},
         {"name": "filters", "displayName": "Filtros", "layout": filters,
          "pageType": "PAGE_TYPE_GLOBAL_FILTERS", "layoutVersion": "GRID_V1"},
     ],
-    "uiSettings": {"theme": {"visualizationColors": ["#235347", "#A9C86C", "#DF9C46", "#D75D52", "#548B9B"],
-                             "widgetHeaderAlignment": "LEFT"}},
+    "uiSettings": {"theme": {
+        "canvasBackgroundColor": {"light": "#F4F7F5", "dark": "#17221D"},
+        "widgetBackgroundColor": {"light": "#FFFFFF", "dark": "#1E2D26"},
+        "widgetBorderColor": {"light": "#FFFFFF", "dark": "#1E2D26"},
+        "fontColor": {"light": "#18352A", "dark": "#ECF4EF"},
+        "selectionColor": {"light": "#147D64", "dark": "#72D6AF"},
+        "visualizationColors": ["#147D64", "#3A7C9A", "#E5A64A", "#A15A89", "#D6705A", "#6B8A54"],
+        "widgetHeaderAlignment": "LEFT", "widgetCornerRadius": 10,
+    }},
 }
 
 OUT.write_text(json.dumps(dashboard, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

@@ -5,7 +5,7 @@ WITH limits AS (
 ), scoped AS (
   SELECT s.store_id, s.net_revenue, s.sale_count, s.item_count,
          s.sale_date BETWEEN l.start_date AND l.end_date AS is_current
-  FROM workspace.mottainai_gold.sales_daily_kpis s
+  FROM motta_analytics.gold.sales_daily s
   CROSS JOIN limits l
   WHERE s.sale_date BETWEEN
     date_sub(l.start_date, datediff(l.end_date, l.start_date) + 1)

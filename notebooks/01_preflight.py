@@ -19,7 +19,7 @@ for name, default in (
     ("operational_database", "MOTTAINAI"),
     ("analytics_connection", "motta_analytics"),
     ("analytics_database", "MOTTAINAI_ANALITICO"),
-    ("target_catalog", "workspace"),
+    ("target_catalog", "motta_analytics"),
 ):
     dbutils.widgets.text(name, default)
 
@@ -74,7 +74,7 @@ published = remote_query(
 if len(published) > 1:
     raise RuntimeError("Analytical publication view returned more than one batch")
 
-for schema in ("mottainai_bronze", "mottainai_silver", "mottainai_gold", "mottainai_control"):
+for schema in ("bronze", "silver", "gold", "control"):
     spark.sql(f"CREATE SCHEMA IF NOT EXISTS `{target_catalog}`.`{schema}`")
 
 if not published or published[0]["batch_id"] is None:

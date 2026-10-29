@@ -25,18 +25,18 @@ jobs:
 
           dashboard = json.loads(Path('dashboard/mottainai_bi.lvdash.json').read_text(encoding='utf-8'))
           datasets = {item['name'] for item in dashboard['datasets']}
-          assert len(datasets) == 6
+          assert len(datasets) == 8
           for item in dashboard['datasets']:
               sql = ' '.join(item['queryLines']).lower()
-              assert 'workspace.mottainai_gold.' in sql
+              assert 'motta_analytics.gold.' in sql
               assert 'remote_query(' not in sql
               assert 'mottainai_operacional' not in sql
           canvas = [page for page in dashboard['pages'] if page['pageType'] == 'PAGE_TYPE_CANVAS']
           filters = [page for page in dashboard['pages'] if page['pageType'] == 'PAGE_TYPE_GLOBAL_FILTERS']
-          assert len(canvas) == 2 and len(filters) == 1
+          assert len(canvas) == 3 and len(filters) == 1
           widgets = [part['widget'] for page in dashboard['pages'] for part in page['layout']]
           assert {'filter-period', 'filter-store'} <= {widget['name'] for widget in widgets}
-          assert {'counter', 'line', 'bar', 'histogram', 'box', 'symbol-map'} <= {
+          assert {'counter', 'line', 'bar', 'histogram', 'box', 'table'} <= {
               widget.get('spec', {}).get('widgetType') for widget in widgets
           }
           for widget in widgets:
@@ -55,13 +55,14 @@ jobs:
           assert job['schedule']['timezone_id'] == 'America/Sao_Paulo'
           assert job['schedule']['pause_status'] == 'UNPAUSED'
           assert [task['task_key'] for task in job['tasks']] == [
-              'preflight', 'bronze', 'refresh_medallion', 'refresh_dashboard'
+              'preflight', 'bronze', 'silver', 'gold', 'refresh_dashboard'
           ]
           assert job['tasks'][1]['depends_on'] == [{'task_key': 'preflight'}]
           assert job['tasks'][2]['depends_on'] == [{'task_key': 'bronze'}]
-          assert job['tasks'][3]['depends_on'] == [{'task_key': 'refresh_medallion'}]
-          assert job['tasks'][3]['dashboard_task']['dashboard_id']
+          assert job['tasks'][3]['depends_on'] == [{'task_key': 'silver'}]
+          assert job['tasks'][4]['depends_on'] == [{'task_key': 'gold'}]
+          assert job['tasks'][4]['dashboard_task']['dashboard_id']
           assert job['parameters'][2]['name'] == 'analytics_connection'
-          for task in job['tasks'][:3]:
+          for task in job['tasks'][:4]:
               assert pathlib.Path(task['notebook_task']['notebook_path']).exists()
           PY

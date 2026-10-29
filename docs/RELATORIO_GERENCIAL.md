@@ -1,70 +1,43 @@
 # Relatório gerencial — Business Intelligence Mottainai
 
-**Referência:** 27/10/2026 · **Responsável:** Ana Costa · **Fonte:** PostgreSQL operacional `MOTTAINAI`, PostgreSQL analítico `MOTTAINAI_ANALITICO` e camadas Delta no Databricks.
+**Referência:** 29/10/2026 · **Responsável:** Ana Costa · **Fonte:** `MOTTAINAI` → RPA → `MOTTAINAI_ANALITICO` → Databricks Delta.
 
-## 1. Problema e decisão de negócio
+## Problema e arquitetura
 
-O operacional muda durante o dia. Consultá-lo diretamente em cada gráfico gera carga transacional e mistura momentos diferentes do negócio. O objetivo do BI é acompanhar vendas, ticket médio, lojas e risco de ruptura/validade sobre **uma fotografia publicada**, para priorizar decisões de estoque e acompanhar a evolução comercial. Os números não representam tempo real. O corte é o instante em que o RPA começa a leitura diária, nominalmente às 02:00 em `America/Sao_Paulo`, incluindo mudanças até esse instante.
+O banco operacional recebe alterações ao longo do dia. O BI precisa de uma fotografia consistente, publicada diariamente, para evitar que gráficos consultem dados transacionais em diferentes momentos. O RPA publica no banco analítico às 02:00 de São Paulo; o job de BI lê o lote publicado às 02:30. Uma carga concluída depois dessa janela requer execução manual do job. O horário real de corte é mostrado no painel.
 
-## 2. Base e linhagem
-
-```text
-MOTTAINAI (transacional)
-  └─ RPA operacional → analítico, transação e reconciliação
-       └─ MOTTAINAI_ANALITICO.mottainai_analytics
-            ├─ dimensões dim_store/dim_company
-            ├─ fatos fact_sales/fact_inventory_snapshot
-            ├─ views de negócio e vw_published_batch
-            └─ Databricks Job: preflight → Bronze → Silver → Gold
-                 └─ AI/BI Dashboard (somente Gold)
-```
-
-O marcador de publicação consumido pelo pipeline é o registro mais recente de `job_log` com `status='SUCCEEDED'`, `cutoff_at` preenchido e `metadata.publication_contract='analytics_mart_v1'`. A view `vw_published_batch` é uma interface auxiliar do mart e deve apontar para o mesmo lote. O pipeline não usa os lotes legados nem lê o operacional para calcular métricas. A conexão operacional aparece apenas no preflight. O mesmo serviço Aiven hospeda os dois bancos físicos; a separação é por database, não por host.
-
-**Granularidade:** `fact_sales` = uma venda por `sale_id` e `sale_date`; `vw_sales_daily_kpis` = data/empresa/loja; `vw_monthly_summary` = mês/loja; `vw_critical_stock` = item de estoque abaixo do mínimo. `dim_store` fornece atributos de localização e ligação com a empresa. As chaves do mart preservam as chaves operacionais; dados pessoais diretos não entram nas consultas Gold. A cópia Bronze de `fact_sales` exclui `customer_id` e `employee_id`.
-
-## 3. Tratamento e controles
-
-| Etapa | Regra | Falha |
+| Camada | Conteúdo | Controle |
 |---|---|---|
-| Preflight | Confere `current_database()` nas duas conexões, sem copiar o operacional | Job falha antes da ingestão |
-| Bronze | Copia o lote publicado e compara contagens de cada relação | Não move o ponteiro Bronze |
-| Silver | Tipos, texto sem espaços nas pontas, chaves obrigatórias, medidas válidas, coordenadas no intervalo e unicidade das chaves de negócio | Registra contagem em `rejected_rows`; Gold antigo permanece publicado |
-| Relações | Cada loja com venda deve existir em `dim_store` | Gold antigo permanece publicado |
-| Gold | Views apontam apenas ao `batch_id` de `mottainai_control.publication` | Ponteiro só muda após todas as tabelas Silver passarem |
-| Frescor | Expõe horário de corte, publicação da origem e atualização BI | Usuário identifica fotografia defasada |
+| Bronze | Cópia Delta de dimensões, fatos e metadados do lote analítico | Contagem por relação e `batch_id` |
+| Silver | Dimensões loja, categoria e produto; fatos vendas, itens e lotes de inventário tipados e limpos | Chaves, unicidade, medidas, coordenadas, relações e `quality_results` |
+| Gold | Views de vendas diárias, tickets, produtos, estoque, frescor e qualidade sobre Silver | Reconciliação de itens e vendas; marcador Gold só avança após validação |
 
-Valores negativos em `current_quantity` são preservados para investigação; `minimum_quantity` negativo é rejeitado. Um dia com todas as vendas canceladas pode ter medidas de receita nulas na view de origem e zero vendas válidas; o relatório interpreta isso como ausência de vendas, sem fabricar receita. `discount_amount` do mart é preenchido com zero pelo RPA por falta de fonte operacional confiável; **não é apresentado como desconto real**.
+Bronze, Silver e Gold são schemas separados em `motta_analytics`, com notebooks e tarefas distintos. O painel consulta exclusivamente Gold. Nenhuma informação pessoal direta é necessária nos KPIs.
 
-## 4. KPIs e interpretação
+## Regras de negócio e indicadores
 
-| KPI | Definição | Grão e unidade | Limite |
-|---|---|---|---|
-| Receita líquida | Soma de `net_revenue` da view diária (vendas `COMPLETED`) | Período, loja; BRL | Fatos podem estar vazios se ainda não houve venda na aplicação |
-| Vendas | Soma de `sale_count` | Período, loja; transações | Canceladas/devolvidas excluídas |
-| Ticket médio | Receita líquida ÷ número de vendas | Período, loja; BRL | Nulo quando não há venda |
-| Variação de receita | (Receita atual − receita do período anterior equivalente) ÷ receita anterior | % | Nula quando base anterior é zero |
-| Itens em venda | Soma de `item_count` | Período; linhas de item | Não equivale necessariamente à soma das quantidades vendidas |
-| Risco de estoque | Contagem de pares loja/produto por `consolidated_risk` | Fotografia mais recente | Depende de inventário e vendas alimentados |
-| Distribuição de ticket | `net_amount` de vendas concluídas | Venda; BRL | Histogramas e boxplots só fazem sentido com amostra suficiente |
-| Frescor | Horários de corte/publicação/atualização e idade em dias | Lote | Deve aparecer no dashboard |
+| Indicador | Cálculo | Leitura correta |
+|---|---|---|
+| Receita líquida | Soma de `net_amount` das vendas `COMPLETED`, reconciliada com subtotais dos itens | BRL por período/loja |
+| Vendas | Contagem de vendas `COMPLETED` | Transações, não itens |
+| Ticket médio | Receita ÷ vendas | Nulo se não há venda |
+| Variação de receita | (Receita atual ÷ receita do período anterior equivalente) − 1 | Nula se base anterior é zero |
+| Unidades vendidas | Soma da quantidade de itens vendidos | Não confundir com número de linhas |
+| Estoque disponível | Quantidade atual menos reservada, por lote | Fotografia do último lote |
+| Valor de estoque | Quantidade em mãos × custo médio | Estimativa a custo, não preço de venda |
+| Vencimento em 30 dias | Quantidade em lotes com validade no horizonte de 30 dias | Indicador de atenção operacional |
+| Frescor | `batch_id`, corte, publicação e atualização | Indica atraso e rastreabilidade |
 
-Para evitar conclusões falsas, cartões devem mostrar **“Sem dados”** quando a base de vendas estiver vazia e não tratar `0` como prova de desempenho comercial. O mapa usa apenas lojas com latitude/longitude válidas e deve indicar quantas lojas ficaram fora por ausência de coordenadas.
+Filtros de período e loja afetam as vendas; estoque permanece a fotografia do último lote. Variação percentual sem período anterior é `NULL`, nunca infinito nem uma afirmação de crescimento. Histogramas e boxplots mostram tickets, mas exigem amostra variada para interpretação. O mapa do PDF é condicional: não há coordenadas válidas na origem, portanto não foi exibido um mapa vazio.
 
-## 5. Dashboard
+## Resultado e revisão crítica
 
-O [dashboard publicado](https://dbc-38ac8920-cbf4.cloud.databricks.com/sql/dashboardsv3/01f1d22904b81b738aef457d6a67f354?o=7474654317437663) usa somente `workspace.mottainai_gold`. O painel tem cards de receita, vendas e ticket médio; linha diária; barras de loja e risco; histograma e boxplot de ticket; mapa condicional; filtros de período e loja; e indicador do lote. A definição versionada está em `dashboard/mottainai_bi.lvdash.json` e é gerada por `dashboard/build_dashboard.py`. A publicação não embute credenciais: leitores precisam das permissões de leitura próprias.
+A [execução 97850894011189](https://dbc-38ac8920-cbf4.cloud.databricks.com/jobs/731348243647869/runs/97850894011189?o=7474654317437663) concluiu as cinco tarefas com `SUCCESS`. No SQL Warehouse, Gold retornou **101 vendas**, **R$ 1.515,00** de receita, **R$ 15,00** de ticket médio e **101 unidades vendidas**. O inventário contém **210 unidades disponíveis**, estimadas em **R$ 2.100,00** a custo médio; não há lote vencendo em 30 dias. Silver registrou **zero falhas de qualidade**.
 
-## 6. Automação e evidência exigida
+Todos os tickets comerciais são do dia 20/10/2026, de uma loja e de um produto. O inventário tem dois lotes do mesmo produto e loja. Esses números provam que o fluxo e as fórmulas funcionam, mas não permitem inferir tendência, sazonalidade, dispersão representativa, desempenho comparativo das lojas ou risco global de estoque. O projeto deve priorizar histórico real e cobertura de produtos/lojas antes de fazer recomendações estratégicas.
 
-O bundle `databricks.yml` define [o job 731348243647869](https://dbc-38ac8920-cbf4.cloud.databricks.com/jobs/731348243647869?o=7474654317437663) com quatro tarefas: preflight, Bronze, Silver/Gold e atualização do dashboard. A concorrência máxima é uma execução. O RPA publica o analítico às 02:00; o job está ativo às 02:30 em São Paulo. Uma publicação fora do horário requer `run-now` até que haja integração por evento entre RPA e Databricks. Gold só muda após todas as validações.
+## Publicação e governança
 
-Para comprovar a entrega no workspace, guardar: URL e ID do job, tela da configuração das três tarefas e agenda; histórico do run com status e durações; consultas de contagem Bronze/Silver/Gold; `dashboard_freshness.batch_id` igual ao PostgreSQL; URL do dashboard publicado, filtros e gráficos funcionando. **Código e CI não substituem esse teste com dados reais.**
+O [dashboard](https://dbc-38ac8920-cbf4.cloud.databricks.com/sql/dashboardsv3/01f1d22904b81b738aef457d6a67f354/published?o=7474654317437663) tem páginas executiva, estoque e distribuição/qualidade, com filtros globais. Foi publicado sem embutir credenciais; leitores precisam de acesso próprio. Todos os oito datasets SQL passaram no warehouse, e o job fez o refresh após Gold. A aparência e a interação dos widgets ainda dependem de inspeção manual em sessão autenticada; o navegador integrado deste ambiente abriu a tela de login.
 
-## 7. Revisão crítica atual
-
-Em 27/10/2026, a [execução do RPA](https://github.com/Mottainai-One/Mottanai-RPA/actions/runs/40545866446) publicou o lote `aaff5e35-d32d-428c-abde-6924fb47b74a` com contrato `analytics_mart_v1`. O [run Databricks 589643529061201](https://dbc-38ac8920-cbf4.cloud.databricks.com/jobs/731348243647869/runs/589643529061201?o=7474654317437663) terminou com sucesso. Bronze e Silver registraram 101 vendas cada; Gold contém 101 tickets e 100 lojas. Receita observada: R$ 1.515,00 em 101 vendas, todas em 20/10/2026; uma loja aparece nas vendas e nenhum ponto possui coordenadas para o mapa. Silver registrou zero rejeições. O lote Gold confere com a publicação analítica. O corte registrado foi `2026-10-27T16:57:04.558Z`, diferente do horário nominal de 02:00 porque o teste foi manual.
-
-**Limites de interpretação:** o histórico disponível tem um dia, uma loja vendedora e todos os tickets no valor de R$ 15,00. Linha temporal, histograma, boxplot e comparação entre lojas estão implementados, mas ainda não demonstram tendência ou dispersão real. O mapa ficará vazio até haver coordenadas confiáveis. Não extrapolar desempenho a partir dessa amostra.
-
-**Dependência de implantação:** a correção do RPA está na [PR #11](https://github.com/Mottainai-One/Mottanai-RPA/pull/11). O teste manual passou, mas o agendamento na branch principal depende de revisão e merge conforme proteção do repositório.
+A [PR da RPA #11](https://github.com/Mottainai-One/Mottanai-RPA/pull/11) ainda precisa do fluxo de revisão/merge para ativar a correção diária na branch principal. A configuração e recuperação do BI estão no [runbook](RUNBOOK.md).

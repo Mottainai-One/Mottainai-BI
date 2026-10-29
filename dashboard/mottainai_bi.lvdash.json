@@ -2,9 +2,9 @@
   "datasets": [
     {
       "name": "ds_period",
-      "displayName": "KPIs por loja e período",
+      "displayName": "KPIs de vendas por período",
       "queryLines": [
-        "WITH limits AS (\n  SELECT CAST(:period.min AS DATE) AS start_date,\n         CAST(:period.max AS DATE) AS end_date\n), scoped AS (\n  SELECT s.store_id, s.net_revenue, s.sale_count, s.item_count,\n         s.sale_date BETWEEN l.start_date AND l.end_date AS is_current\n  FROM workspace.mottainai_gold.sales_daily_kpis s\n  CROSS JOIN limits l\n  WHERE s.sale_date BETWEEN\n    date_sub(l.start_date, datediff(l.end_date, l.start_date) + 1)\n    AND l.end_date\n)\nSELECT store_id,\n       SUM(CASE WHEN is_current THEN net_revenue ELSE 0 END) AS revenue_brl,\n       SUM(CASE WHEN NOT is_current THEN net_revenue ELSE 0 END) AS previous_revenue_brl,\n       SUM(CASE WHEN is_current THEN sale_count ELSE 0 END) AS sales_count,\n       SUM(CASE WHEN NOT is_current THEN sale_count ELSE 0 END) AS previous_sales_count,\n       SUM(CASE WHEN is_current THEN item_count ELSE 0 END) AS items_count\nFROM scoped GROUP BY store_id"
+        "WITH limits AS (\n  SELECT CAST(:period.min AS DATE) AS start_date,\n         CAST(:period.max AS DATE) AS end_date\n), scoped AS (\n  SELECT s.store_id, s.net_revenue, s.sale_count, s.item_count,\n         s.sale_date BETWEEN l.start_date AND l.end_date AS is_current\n  FROM motta_analytics.gold.sales_daily s\n  CROSS JOIN limits l\n  WHERE s.sale_date BETWEEN\n    date_sub(l.start_date, datediff(l.end_date, l.start_date) + 1)\n    AND l.end_date\n)\nSELECT store_id,\n       SUM(CASE WHEN is_current THEN net_revenue ELSE 0 END) AS revenue_brl,\n       SUM(CASE WHEN NOT is_current THEN net_revenue ELSE 0 END) AS previous_revenue_brl,\n       SUM(CASE WHEN is_current THEN sale_count ELSE 0 END) AS sales_count,\n       SUM(CASE WHEN NOT is_current THEN sale_count ELSE 0 END) AS previous_sales_count,\n       SUM(CASE WHEN is_current THEN item_count ELSE 0 END) AS items_count\nFROM scoped GROUP BY store_id"
       ],
       "parameters": [
         {
@@ -30,35 +30,49 @@
       "name": "ds_sales",
       "displayName": "Vendas diárias",
       "queryLines": [
-        "SELECT sale_date, store_id, store_name, net_revenue AS revenue_brl,\n       sale_count, item_count\nFROM workspace.mottainai_gold.sales_daily_kpis"
+        "SELECT sale_date, company_id, store_id, store_name,\n       net_revenue AS revenue_brl, sale_count, item_count, average_ticket\nFROM motta_analytics.gold.sales_daily"
       ]
     },
     {
       "name": "ds_tickets",
       "displayName": "Tickets concluídos",
       "queryLines": [
-        "SELECT t.sale_date, t.store_id, s.store_name, t.ticket_amount, t.item_count\nFROM workspace.mottainai_gold.ticket_distribution t\nJOIN workspace.mottainai_gold.stores s ON s.store_id = t.store_id"
+        "SELECT sale_id, sale_date, store_id, store_name, ticket_amount, item_count\nFROM motta_analytics.gold.sales_tickets"
       ]
     },
     {
-      "name": "ds_risk",
-      "displayName": "Risco de estoque",
+      "name": "ds_inventory",
+      "displayName": "Saúde do estoque",
       "queryLines": [
-        "SELECT store_id, store_name, product_id, product_name, consolidated_risk,\n       current_stock, days_of_coverage, value_at_expiration_risk\nFROM workspace.mottainai_gold.product_risk_ranking"
+        "SELECT snapshot_date, store_id, store_name, product_id, product_name,\n       on_hand_quantity, reserved_quantity, available_quantity, stock_value,\n       minimum_quantity, value_expiring_30d, expired_value, below_minimum, batch_count\nFROM motta_analytics.gold.inventory_health"
       ]
     },
     {
-      "name": "ds_geo",
-      "displayName": "Lojas geográficas",
+      "name": "ds_product",
+      "displayName": "Vendas por produto",
       "queryLines": [
-        "SELECT store_id, store_name, city, state_code, latitude, longitude\nFROM workspace.mottainai_gold.store_geography"
+        "SELECT sale_date, store_id, store_name, product_id, product_name,\n       category_name, units_sold, net_revenue, sales_with_product\nFROM motta_analytics.gold.product_sales_daily"
+      ]
+    },
+    {
+      "name": "ds_batches",
+      "displayName": "Lotes de estoque",
+      "queryLines": [
+        "SELECT snapshot_date, store_id, store_name, product_id, product_name,\n       source_batch_id, inventory_type, quantity, reserved_quantity,\n       available_quantity, stock_value, minimum_quantity, expiration_date, days_to_expiry\nFROM motta_analytics.gold.inventory_batches"
       ]
     },
     {
       "name": "ds_freshness",
       "displayName": "Frescor do lote",
       "queryLines": [
-        "SELECT batch_id, source_cutoff_at, source_published_at, refreshed_at,\n       datediff(current_date(), CAST(source_cutoff_at AS DATE)) AS age_days\nFROM workspace.mottainai_gold.dashboard_freshness"
+        "SELECT batch_id, model_version, source_cutoff_at, source_published_at, refreshed_at,\n       datediff(current_date(), CAST(source_cutoff_at AS DATE)) AS age_days\nFROM motta_analytics.gold.dashboard_freshness"
+      ]
+    },
+    {
+      "name": "ds_quality",
+      "displayName": "Qualidade Silver",
+      "queryLines": [
+        "SELECT relation_name, checked_rows, invalid_rows, checked_at\nFROM motta_analytics.gold.quality_summary"
       ]
     }
   ],
@@ -72,9 +86,9 @@
             "name": "executive-header",
             "multilineTextboxSpec": {
               "lines": [
-                "# Mottainai | Visão executiva\n",
+                "# Mottainai  |  Visão executiva\n",
                 "\n",
-                "Fotografia diária do banco analítico. Corte efetivo e lote no rodapé."
+                "Vendas concluídas do último lote analítico. Filtros de período e loja no topo; estoque usa a fotografia mais recente."
               ]
             }
           },
@@ -97,10 +111,6 @@
                     {
                       "name": "value",
                       "expression": "SUM(`revenue_brl`)"
-                    },
-                    {
-                      "name": "previous",
-                      "expression": "SUM(`previous_revenue_brl`)"
                     }
                   ],
                   "disaggregated": false
@@ -113,7 +123,7 @@
               "encodings": {
                 "value": {
                   "fieldName": "value",
-                  "displayName": "Receita líquida",
+                  "displayName": "Receita líquida · BRL",
                   "format": {
                     "type": "number-currency",
                     "currencyCode": "BRL",
@@ -122,15 +132,11 @@
                       "places": 2
                     }
                   }
-                },
-                "target": {
-                  "fieldName": "previous",
-                  "displayName": "Período anterior"
                 }
               },
               "frame": {
                 "showTitle": true,
-                "title": "Receita líquida"
+                "title": "Receita líquida · BRL"
               }
             }
           },
@@ -153,10 +159,6 @@
                     {
                       "name": "value",
                       "expression": "SUM(`sales_count`)"
-                    },
-                    {
-                      "name": "previous",
-                      "expression": "SUM(`previous_sales_count`)"
                     }
                   ],
                   "disaggregated": false
@@ -169,16 +171,12 @@
               "encodings": {
                 "value": {
                   "fieldName": "value",
-                  "displayName": "Vendas"
-                },
-                "target": {
-                  "fieldName": "previous",
-                  "displayName": "Período anterior"
+                  "displayName": "Vendas concluídas"
                 }
               },
               "frame": {
                 "showTitle": true,
-                "title": "Vendas"
+                "title": "Vendas concluídas"
               }
             }
           },
@@ -213,7 +211,7 @@
               "encodings": {
                 "value": {
                   "fieldName": "value",
-                  "displayName": "Ticket médio",
+                  "displayName": "Ticket médio · BRL",
                   "format": {
                     "type": "number-currency",
                     "currencyCode": "BRL",
@@ -226,7 +224,7 @@
               },
               "frame": {
                 "showTitle": true,
-                "title": "Ticket médio"
+                "title": "Ticket médio · BRL"
               }
             }
           },
@@ -261,7 +259,7 @@
               "encodings": {
                 "value": {
                   "fieldName": "value",
-                  "displayName": "Variação de receita",
+                  "displayName": "Variação vs. período anterior",
                   "format": {
                     "type": "number-percent",
                     "decimalPlaces": {
@@ -273,7 +271,7 @@
               },
               "frame": {
                 "showTitle": true,
-                "title": "Variação de receita"
+                "title": "Variação vs. período anterior"
               }
             }
           },
@@ -282,6 +280,22 @@
             "y": 2,
             "width": 3,
             "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "history-note",
+            "multilineTextboxSpec": {
+              "lines": [
+                "**Leitura responsável:** o histórico atual tem somente um dia de vendas e uma loja com movimento. A variação fica sem valor enquanto o período anterior não tiver receita; não interprete a linha como tendência antes de haver mais datas."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 12,
+            "height": 2
           }
         },
         {
@@ -339,8 +353,8 @@
           },
           "position": {
             "x": 0,
-            "y": 5,
-            "width": 8,
+            "y": 7,
+            "width": 6,
             "height": 6
           }
         },
@@ -393,15 +407,89 @@
               },
               "frame": {
                 "showTitle": true,
-                "title": "Receita por loja"
+                "title": "Receita por loja com vendas"
               }
             }
           },
           "position": {
-            "x": 8,
-            "y": 5,
-            "width": 4,
+            "x": 6,
+            "y": 7,
+            "width": 6,
             "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "product-sales",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_product",
+                  "fields": [
+                    {
+                      "name": "product_name",
+                      "expression": "`product_name`"
+                    },
+                    {
+                      "name": "category_name",
+                      "expression": "`category_name`"
+                    },
+                    {
+                      "name": "units_sold",
+                      "expression": "`units_sold`"
+                    },
+                    {
+                      "name": "net_revenue",
+                      "expression": "`net_revenue`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "product_name",
+                    "displayName": "Produto"
+                  },
+                  {
+                    "fieldName": "category_name",
+                    "displayName": "Categoria"
+                  },
+                  {
+                    "fieldName": "units_sold",
+                    "displayName": "Unidades"
+                  },
+                  {
+                    "fieldName": "net_revenue",
+                    "displayName": "Receita (BRL)",
+                    "format": {
+                      "type": "number-currency",
+                      "currencyCode": "BRL",
+                      "decimalPlaces": {
+                        "type": "max",
+                        "places": 2
+                      }
+                    }
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Produtos vendidos"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 13,
+            "width": 12,
+            "height": 4
           }
         },
         {
@@ -416,6 +504,10 @@
                     {
                       "name": "batch_id",
                       "expression": "`batch_id`"
+                    },
+                    {
+                      "name": "model_version",
+                      "expression": "`model_version`"
                     },
                     {
                       "name": "source_cutoff_at",
@@ -444,6 +536,10 @@
                     "displayName": "Lote"
                   },
                   {
+                    "fieldName": "model_version",
+                    "displayName": "Modelo"
+                  },
+                  {
                     "fieldName": "source_cutoff_at",
                     "displayName": "Corte da origem"
                   },
@@ -459,13 +555,13 @@
               },
               "frame": {
                 "showTitle": true,
-                "title": "Lote e frescor"
+                "title": "Linhagem e frescor"
               }
             }
           },
           "position": {
             "x": 0,
-            "y": 11,
+            "y": 17,
             "width": 12,
             "height": 4
           }
@@ -475,17 +571,17 @@
       "layoutVersion": "GRID_V1"
     },
     {
-      "name": "stock-tickets",
-      "displayName": "Estoque e tickets",
+      "name": "stock",
+      "displayName": "Estoque",
       "layout": [
         {
           "widget": {
-            "name": "detail-header",
+            "name": "stock-header",
             "multilineTextboxSpec": {
               "lines": [
-                "# Estoque e distribuição de vendas\n",
+                "# Estoque  |  Disponibilidade e valor\n",
                 "\n",
-                "Estoque é uma fotografia; filtros de data afetam somente vendas. O mapa requer coordenadas cadastradas."
+                "Fotografia do produto por loja e lote; usa a data mais recente de cada produto. O filtro de data afeta vendas, não esta página."
               ]
             }
           },
@@ -498,20 +594,196 @@
         },
         {
           "widget": {
-            "name": "risk-bars",
+            "name": "on-hand",
             "queries": [
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "ds_risk",
+                  "datasetName": "ds_inventory",
                   "fields": [
                     {
-                      "name": "consolidated_risk",
-                      "expression": "`consolidated_risk`"
+                      "name": "value",
+                      "expression": "SUM(`on_hand_quantity`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "value",
+                  "displayName": "Unidades em estoque"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Unidades em estoque"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "available",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_inventory",
+                  "fields": [
+                    {
+                      "name": "value",
+                      "expression": "SUM(`available_quantity`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "value",
+                  "displayName": "Unidades disponíveis"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Unidades disponíveis"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 2,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "stock-value",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_inventory",
+                  "fields": [
+                    {
+                      "name": "value",
+                      "expression": "SUM(`stock_value`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "value",
+                  "displayName": "Valor em estoque · BRL",
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "BRL",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 2
+                    }
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Valor em estoque · BRL"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 2,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "expiring",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_inventory",
+                  "fields": [
+                    {
+                      "name": "value",
+                      "expression": "SUM(`value_expiring_30d`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "value",
+                  "displayName": "Vence em 30 dias · BRL",
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "BRL",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 2
+                    }
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Vence em 30 dias · BRL"
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 2,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "stock-bars",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_inventory",
+                  "fields": [
+                    {
+                      "name": "product_name",
+                      "expression": "`product_name`"
                     },
                     {
-                      "name": "products",
-                      "expression": "COUNT(*)"
+                      "name": "available",
+                      "expression": "SUM(`available_quantity`)"
                     }
                   ],
                   "disaggregated": false
@@ -523,38 +795,205 @@
               "widgetType": "bar",
               "encodings": {
                 "x": {
-                  "fieldName": "consolidated_risk",
+                  "fieldName": "available",
                   "scale": {
-                    "type": "categorical",
-                    "sort": {
-                      "by": "custom-order",
-                      "orderedValues": [
-                        "CRITICAL",
-                        "HIGH",
-                        "MEDIUM",
-                        "LOW"
-                      ]
-                    }
+                    "type": "quantitative"
                   }
                 },
                 "y": {
-                  "fieldName": "products",
+                  "fieldName": "product_name",
                   "scale": {
-                    "type": "quantitative"
+                    "type": "categorical"
                   }
                 }
               },
               "frame": {
                 "showTitle": true,
-                "title": "Produtos por nível de risco"
+                "title": "Disponível por produto"
               }
             }
           },
           "position": {
             "x": 0,
-            "y": 2,
+            "y": 5,
             "width": 6,
             "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "stock-value-bars",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_inventory",
+                  "fields": [
+                    {
+                      "name": "product_name",
+                      "expression": "`product_name`"
+                    },
+                    {
+                      "name": "value",
+                      "expression": "SUM(`stock_value`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "value",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "BRL",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 2
+                    }
+                  }
+                },
+                "y": {
+                  "fieldName": "product_name",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Valor por produto"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 5,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "batch-details",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_batches",
+                  "fields": [
+                    {
+                      "name": "store_name",
+                      "expression": "`store_name`"
+                    },
+                    {
+                      "name": "product_name",
+                      "expression": "`product_name`"
+                    },
+                    {
+                      "name": "source_batch_id",
+                      "expression": "`source_batch_id`"
+                    },
+                    {
+                      "name": "available_quantity",
+                      "expression": "`available_quantity`"
+                    },
+                    {
+                      "name": "stock_value",
+                      "expression": "`stock_value`"
+                    },
+                    {
+                      "name": "expiration_date",
+                      "expression": "`expiration_date`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "store_name",
+                    "displayName": "Loja"
+                  },
+                  {
+                    "fieldName": "product_name",
+                    "displayName": "Produto"
+                  },
+                  {
+                    "fieldName": "source_batch_id",
+                    "displayName": "Lote"
+                  },
+                  {
+                    "fieldName": "available_quantity",
+                    "displayName": "Disponível"
+                  },
+                  {
+                    "fieldName": "stock_value",
+                    "displayName": "Valor (BRL)",
+                    "format": {
+                      "type": "number-currency",
+                      "currencyCode": "BRL",
+                      "decimalPlaces": {
+                        "type": "max",
+                        "places": 2
+                      }
+                    }
+                  },
+                  {
+                    "fieldName": "expiration_date",
+                    "displayName": "Validade"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Lotes e vencimentos"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 11,
+            "width": 12,
+            "height": 6
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "distribution",
+      "displayName": "Distribuição e qualidade",
+      "layout": [
+        {
+          "widget": {
+            "name": "distribution-header",
+            "multilineTextboxSpec": {
+              "lines": [
+                "# Distribuição e qualidade\n",
+                "\n",
+                "Histograma e boxplot mostram os tickets observados. Com apenas um preço e uma loja vendedora, ainda não há dispersão real; a qualidade registra o que a Silver validou."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 2
           }
         },
         {
@@ -598,12 +1037,12 @@
               },
               "frame": {
                 "showTitle": true,
-                "title": "Distribuição dos tickets (faixas de R$ 5)"
+                "title": "Tickets por faixa de R$ 5"
               }
             }
           },
           "position": {
-            "x": 6,
+            "x": 0,
             "y": 2,
             "width": 6,
             "height": 6
@@ -649,101 +1088,41 @@
               },
               "frame": {
                 "showTitle": true,
-                "title": "Variação do ticket por loja"
-              }
-            }
-          },
-          "position": {
-            "x": 0,
-            "y": 8,
-            "width": 6,
-            "height": 6
-          }
-        },
-        {
-          "widget": {
-            "name": "store-map",
-            "queries": [
-              {
-                "name": "main_query",
-                "query": {
-                  "datasetName": "ds_geo",
-                  "fields": [
-                    {
-                      "name": "store_name",
-                      "expression": "`store_name`"
-                    },
-                    {
-                      "name": "latitude",
-                      "expression": "`latitude`"
-                    },
-                    {
-                      "name": "longitude",
-                      "expression": "`longitude`"
-                    },
-                    {
-                      "name": "store_id",
-                      "expression": "`store_id`"
-                    }
-                  ],
-                  "disaggregated": true
-                }
-              }
-            ],
-            "spec": {
-              "version": 2,
-              "widgetType": "symbol-map",
-              "encodings": {
-                "coordinates": {
-                  "latitude": {
-                    "fieldName": "latitude"
-                  },
-                  "longitude": {
-                    "fieldName": "longitude"
-                  }
-                }
-              },
-              "frame": {
-                "showTitle": true,
-                "title": "Lojas com coordenadas"
+                "title": "Ticket por loja"
               }
             }
           },
           "position": {
             "x": 6,
-            "y": 8,
+            "y": 2,
             "width": 6,
             "height": 6
           }
         },
         {
           "widget": {
-            "name": "risk-details",
+            "name": "quality-table",
             "queries": [
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "ds_risk",
+                  "datasetName": "ds_quality",
                   "fields": [
                     {
-                      "name": "store_name",
-                      "expression": "`store_name`"
+                      "name": "relation_name",
+                      "expression": "`relation_name`"
                     },
                     {
-                      "name": "product_name",
-                      "expression": "`product_name`"
+                      "name": "checked_rows",
+                      "expression": "`checked_rows`"
                     },
                     {
-                      "name": "consolidated_risk",
-                      "expression": "`consolidated_risk`"
+                      "name": "invalid_rows",
+                      "expression": "`invalid_rows`"
                     },
                     {
-                      "name": "current_stock",
-                      "expression": "`current_stock`"
-                    },
-                    {
-                      "name": "days_of_coverage",
-                      "expression": "`days_of_coverage`"
+                      "name": "checked_at",
+                      "expression": "`checked_at`"
                     }
                   ],
                   "disaggregated": true
@@ -756,38 +1135,34 @@
               "encodings": {
                 "columns": [
                   {
-                    "fieldName": "store_name",
-                    "displayName": "Loja"
+                    "fieldName": "relation_name",
+                    "displayName": "Regra / relação"
                   },
                   {
-                    "fieldName": "product_name",
-                    "displayName": "Produto"
+                    "fieldName": "checked_rows",
+                    "displayName": "Linhas verificadas"
                   },
                   {
-                    "fieldName": "consolidated_risk",
-                    "displayName": "Risco"
+                    "fieldName": "invalid_rows",
+                    "displayName": "Falhas"
                   },
                   {
-                    "fieldName": "current_stock",
-                    "displayName": "Estoque atual"
-                  },
-                  {
-                    "fieldName": "days_of_coverage",
-                    "displayName": "Cobertura (dias)"
+                    "fieldName": "checked_at",
+                    "displayName": "Verificado em"
                   }
                 ]
               },
               "frame": {
                 "showTitle": true,
-                "title": "Detalhes do risco"
+                "title": "Validação da Silver"
               }
             }
           },
           "position": {
             "x": 0,
-            "y": 14,
+            "y": 8,
             "width": 12,
-            "height": 5
+            "height": 7
           }
         }
       ],
@@ -840,6 +1215,19 @@
                     }
                   ]
                 }
+              },
+              {
+                "name": "q_ds_product",
+                "query": {
+                  "datasetName": "ds_product",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "name": "sale_date",
+                      "expression": "`sale_date`"
+                    }
+                  ]
+                }
               }
             ],
             "spec": {
@@ -858,6 +1246,10 @@
                   {
                     "fieldName": "sale_date",
                     "queryName": "q_ds_tickets"
+                  },
+                  {
+                    "fieldName": "sale_date",
+                    "queryName": "q_ds_product"
                   }
                 ]
               },
@@ -883,7 +1275,7 @@
           "position": {
             "x": 0,
             "y": 0,
-            "width": 5,
+            "width": 6,
             "height": 2
           }
         },
@@ -931,9 +1323,9 @@
                 }
               },
               {
-                "name": "q_ds_risk",
+                "name": "q_ds_product",
                 "query": {
-                  "datasetName": "ds_risk",
+                  "datasetName": "ds_product",
                   "disaggregated": false,
                   "fields": [
                     {
@@ -944,9 +1336,22 @@
                 }
               },
               {
-                "name": "q_ds_geo",
+                "name": "q_ds_inventory",
                 "query": {
-                  "datasetName": "ds_geo",
+                  "datasetName": "ds_inventory",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "name": "store_id",
+                      "expression": "`store_id`"
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "q_ds_batches",
+                "query": {
+                  "datasetName": "ds_batches",
                   "disaggregated": false,
                   "fields": [
                     {
@@ -976,11 +1381,15 @@
                   },
                   {
                     "fieldName": "store_id",
-                    "queryName": "q_ds_risk"
+                    "queryName": "q_ds_product"
                   },
                   {
                     "fieldName": "store_id",
-                    "queryName": "q_ds_geo"
+                    "queryName": "q_ds_inventory"
+                  },
+                  {
+                    "fieldName": "store_id",
+                    "queryName": "q_ds_batches"
                   }
                 ]
               },
@@ -991,9 +1400,9 @@
             }
           },
           "position": {
-            "x": 5,
+            "x": 6,
             "y": 0,
-            "width": 5,
+            "width": 6,
             "height": 2
           }
         }
@@ -1004,14 +1413,36 @@
   ],
   "uiSettings": {
     "theme": {
+      "canvasBackgroundColor": {
+        "light": "#F4F7F5",
+        "dark": "#17221D"
+      },
+      "widgetBackgroundColor": {
+        "light": "#FFFFFF",
+        "dark": "#1E2D26"
+      },
+      "widgetBorderColor": {
+        "light": "#FFFFFF",
+        "dark": "#1E2D26"
+      },
+      "fontColor": {
+        "light": "#18352A",
+        "dark": "#ECF4EF"
+      },
+      "selectionColor": {
+        "light": "#147D64",
+        "dark": "#72D6AF"
+      },
       "visualizationColors": [
-        "#235347",
-        "#A9C86C",
-        "#DF9C46",
-        "#D75D52",
-        "#548B9B"
+        "#147D64",
+        "#3A7C9A",
+        "#E5A64A",
+        "#A15A89",
+        "#D6705A",
+        "#6B8A54"
       ],
-      "widgetHeaderAlignment": "LEFT"
+      "widgetHeaderAlignment": "LEFT",
+      "widgetCornerRadius": 10
     }
   }
 }

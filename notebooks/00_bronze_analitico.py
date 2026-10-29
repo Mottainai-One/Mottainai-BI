@@ -20,15 +20,15 @@ def quoted(value: str) -> str:
 for name, default in (
     ("analytics_connection", "motta_analytics"),
     ("analytics_database", "MOTTAINAI_ANALITICO"),
-    ("target_catalog", "workspace"),
+    ("target_catalog", "motta_analytics"),
 ):
     dbutils.widgets.text(name, default)
 
 connection = identifier(dbutils.widgets.get("analytics_connection"))
 database = identifier(dbutils.widgets.get("analytics_database"))
 catalog = identifier(dbutils.widgets.get("target_catalog"))
-bronze_schema = f"`{catalog}`.`mottainai_bronze`"
-control_schema = f"`{catalog}`.`mottainai_control`"
+bronze_schema = f"`{catalog}`.`bronze`"
+control_schema = f"`{catalog}`.`control`"
 control_table = f"{control_schema}.`bronze_publication`"
 
 
@@ -100,11 +100,15 @@ if previous and previous[0]["batch_id"] == batch:
     print(f"Lote {batch} já está na Bronze")
     dbutils.notebook.exit("NO_NEW_BATCH")
 
-# Inclui as quatro tabelas centrais e as sete relações solicitadas para BI.
+# Bronze preserva os fatos e dimensões analíticas no grão de origem. Views de
+# negócio são retidas para reconciliação, nunca servidas diretamente pelo Gold.
 relations = (
     "dim_company",
     "dim_store",
+    "dim_category",
+    "dim_product",
     "fact_sales",
+    "fact_sale_item",
     "fact_inventory_snapshot",
     "vw_sales_daily_kpis",
     "mv_dashboard_metrics",
@@ -134,7 +138,7 @@ for relation in relations:
 
 for relation, frame in frames.items():
     table = f"{bronze_schema}.`{relation}`"
-    if spark.catalog.tableExists(f"{catalog}.mottainai_bronze.{relation}"):
+    if spark.catalog.tableExists(f"{catalog}.bronze.{relation}"):
         spark.sql(f"DELETE FROM {table} WHERE _batch_id = {quoted(batch)}")
     (
         frame.withColumn("_batch_id", F.lit(batch))

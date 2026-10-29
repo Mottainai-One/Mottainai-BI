@@ -1,4 +1,5 @@
 -- Snapshot risk. Only the store filter applies; this is not a time series.
-SELECT store_id, store_name, product_id, product_name, consolidated_risk,
-       current_stock, days_of_coverage, value_at_expiration_risk
-FROM workspace.mottainai_gold.product_risk_ranking;
+SELECT snapshot_date, store_id, store_name, product_id, product_name,
+       on_hand_quantity, reserved_quantity, available_quantity, stock_value,
+       minimum_quantity, value_expiring_30d, expired_value, below_minimum, batch_count
+FROM motta_analytics.gold.inventory_health;
