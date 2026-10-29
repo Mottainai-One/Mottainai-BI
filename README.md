@@ -14,6 +14,7 @@ As três camadas ficam em `motta_analytics.bronze`, `motta_analytics.silver` e `
 
 ## Entregáveis
 
+- [PR #5 da revisão de indicadores](https://github.com/Mottainai-One/Mottainai-BI/pull/5), continuação da PR #3 mesclada.
 - [Dashboard publicado](https://dbc-38ac8920-cbf4.cloud.databricks.com/sql/dashboardsv3/01f1d22904b81b738aef457d6a67f354?o=7474654317437663)
 - [Job Databricks](https://dbc-38ac8920-cbf4.cloud.databricks.com/jobs/731348243647869?o=7474654317437663)
 - [Execução validada, cinco tarefas](https://dbc-38ac8920-cbf4.cloud.databricks.com/jobs/731348243647869/runs/906604160409285?o=7474654317437663)
