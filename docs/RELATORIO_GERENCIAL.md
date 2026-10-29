@@ -38,6 +38,6 @@ Todos os tickets comerciais são do dia 20/10/2026, de uma loja e de um produto.
 
 ## Publicação e governança
 
-O [dashboard](https://dbc-38ac8920-cbf4.cloud.databricks.com/sql/dashboardsv3/01f1d22904b81b738aef457d6a67f354/published?o=7474654317437663) tem páginas executiva, estoque e distribuição/qualidade, com filtros globais. Foi publicado sem embutir credenciais; leitores precisam de acesso próprio. Todos os oito datasets SQL passaram no warehouse, e o job fez o refresh após Gold. A aparência e a interação dos widgets ainda dependem de inspeção manual em sessão autenticada; o navegador integrado deste ambiente abriu a tela de login.
+O [dashboard](https://dbc-38ac8920-cbf4.cloud.databricks.com/sql/dashboardsv3/01f1d22904b81b738aef457d6a67f354?o=7474654317437663) tem páginas executiva, estoque e distribuição/qualidade, com filtros globais. Foi publicado sem embutir credenciais; leitores precisam de acesso próprio. Todos os oito datasets SQL passaram no warehouse, e o job fez o refresh após Gold. A aparência e a interação dos widgets ainda dependem de inspeção manual em sessão autenticada; o navegador integrado deste ambiente abriu a tela de login.
 
 A [PR da RPA #11](https://github.com/Mottainai-One/Mottanai-RPA/pull/11) ainda precisa do fluxo de revisão/merge para ativar a correção diária na branch principal. A configuração e recuperação do BI estão no [runbook](RUNBOOK.md).

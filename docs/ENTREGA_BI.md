@@ -1,6 +1,6 @@
 # Entrega da disciplina de Business Intelligence
 
-**Verificação:** 29/10/2026 · **Código:** [PR BI #3](https://github.com/Mottainai-One/Mottainai-BI/pull/3) · **Painel:** [Databricks publicado](https://dbc-38ac8920-cbf4.cloud.databricks.com/sql/dashboardsv3/01f1d22904b81b738aef457d6a67f354/published?o=7474654317437663).
+**Verificação:** 29/10/2026 · **Código:** [PR BI #3](https://github.com/Mottainai-One/Mottainai-BI/pull/3) · **Painel:** [Databricks publicado](https://dbc-38ac8920-cbf4.cloud.databricks.com/sql/dashboardsv3/01f1d22904b81b738aef457d6a67f354?o=7474654317437663).
 
 | Requisito | Implementação | Evidência |
 |---|---|---|
