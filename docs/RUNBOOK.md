@@ -1,53 +1,43 @@
-# Operação do job BI
+# Runbook — BI Databricks
 
-## Antes do primeiro uso
+## Operação diária
 
-No SQL Editor do Databricks, substitua os nomes pelos catálogos **já criados** no workspace:
+O RPA publica o lote de `MOTTAINAI` em `MOTTAINAI_ANALITICO` às 02:00 de São Paulo. O job `mottainai-analytics-to-medallion` começa às 02:30, com `max_concurrent_runs=1`. Ordem: `preflight → bronze → silver → gold → refresh_dashboard`. A execução fora do horário só deve ocorrer depois de `mottainai_analytics.vw_published_batch` mostrar novo lote publicado.
 
-```sql
-SHOW CATALOGS;
-SELECT count(*) FROM <catalogo_operacional>.mottainai.company;
-SELECT batch_id, source_cutoff_at, published_at
-FROM <catalogo_analitico>.mottainai_analytics.vw_published_batch;
-SELECT count(*)
-FROM <catalogo_analitico>.mottainai_analytics.vw_sales_daily_kpis;
-```
+O workspace usa as conexões Unity Catalog `conection_motta_operacional` e `motta_analytics`; os bancos físicos são respectivamente `MOTTAINAI` e `MOTTAINAI_ANALITICO`. Usuário e senha são administrados nessas conexões, nunca nos notebooks.
 
-O primeiro `count` valida a conexão operacional, sem copiar seus dados. A view `vw_published_batch` deve mostrar **no máximo um** lote atual; sem lote publicado, o refresh não altera Gold.
-
-Para implantar com o Databricks CLI autenticado no workspace:
+## Implantação e execução
 
 ```powershell
-databricks bundle validate --var="operational_catalog=NOME" --var="analytics_catalog=NOME" --var="target_catalog=workspace"
-databricks bundle deploy --var="operational_catalog=NOME" --var="analytics_catalog=NOME" --var="target_catalog=workspace"
-databricks bundle run analytics_to_medallion
+databricks bundle validate -p mottainai-bi
+databricks bundle deploy -p mottainai-bi
+databricks jobs run-now 731348243647869 -p mottainai-bi
 ```
 
-A agenda fica pausada no bundle até a equipe validar uma execução manual. A agenda de contingência é 02:30, no fuso `America/Sao_Paulo`; caso o RPA publique depois desse horário, acione o job manualmente ou pelo gatilho do RPA. Não mova a RPA para o Databricks: ela já gerencia a transação entre os dois PostgreSQLs.
+O catálogo gerenciado de destino é `motta_analytics`. Os schemas `bronze`, `silver`, `gold` e `control` são criados pelo preflight. O dashboard mantém ID `01f1d22904b81b738aef457d6a67f354` e usa warehouse `64bc14de5692c645`. Após alterar SQL ou visualizações, regenere o JSON com `python dashboard/build_dashboard.py`, atualize e publique o **mesmo** dashboard; o job faz o refresh do publicado.
 
-## Publicação e qualidade
-
-1. O job lê o `batch_id` da view `vw_published_batch` do banco analítico. Se esse lote já consta em `mottainai_control.publication`, encerra sem reprocessar.
-2. Bronze recebe cópias das três views selecionadas, identificadas pelo lote. Uma tentativa falha pode repetir o mesmo lote sem duplicar linhas.
-3. Silver tipa, limpa e valida os campos. Linhas inválidas entram em `mottainai_silver.rejected_rows` e o lote **não é publicado** para Gold até a correção da origem ou da regra.
-4. Antes de publicar, o job confere novamente o `batch_id` no analítico. Gold mostra apenas o lote apontado pela tabela de controle, trocada ao fim de todas as etapas.
-
-Consultas após a execução:
+## Verificação no SQL Warehouse
 
 ```sql
-SELECT * FROM workspace.mottainai_gold.dashboard_freshness;
-SELECT count(*) FROM workspace.mottainai_gold.sales_daily_kpis;
-SELECT count(*) FROM workspace.mottainai_gold.monthly_summary;
-SELECT count(*) FROM workspace.mottainai_gold.critical_stock;
-SELECT source_view, error_code, count(*)
-FROM workspace.mottainai_silver.rejected_rows
-GROUP BY source_view, error_code;
+SELECT * FROM motta_analytics.gold.dashboard_freshness;
+SELECT count(*) AS vendas FROM motta_analytics.gold.sales_tickets;
+SELECT sum(revenue_brl) AS receita FROM motta_analytics.gold.sales_daily;
+SELECT sum(available_quantity) AS unidades_disponiveis,
+       sum(stock_value) AS valor_estoque
+FROM motta_analytics.gold.inventory_health;
+SELECT * FROM motta_analytics.gold.quality_summary;
+SELECT * FROM motta_analytics.control.silver_publication;
+SELECT * FROM motta_analytics.control.publication;
 ```
 
-Se `rejected_rows` ainda não existir, nenhuma linha foi rejeitada. Troque `workspace` pelo catálogo gerenciado escolhido. O dashboard deve exibir `source_cutoff_at` e `source_published_at` de `dashboard_freshness` para que a equipe saiba a idade dos dados.
+No PostgreSQL, conecte-se **ao database `MOTTAINAI_ANALITICO`** e execute `SELECT batch_id, source_cutoff_at, published_at FROM mottainai_analytics.vw_published_batch;`. Compare esse `batch_id` com `dashboard_freshness`. PostgreSQL não aceita `database.schema.table` para consultar outro database.
 
-## Atualização do dashboard
+## Falhas
 
-O gatilho de atualização é a **publicação concluída** no banco analítico, não qualquer alteração em andamento nas tabelas. Depois de criar e publicar o dashboard, acrescente ao mesmo job uma tarefa `Dashboard` dependente de `refresh_medallion`. Configure o RPA para chamar `run-now` após confirmar `PUBLISHED`; mantenha a agenda das 02:30 apenas como contingência. Um gatilho `table update` do Databricks não observa alterações diretamente no PostgreSQL federado, pois acompanha tabelas do Unity Catalog. Até a ligação do RPA, não há atualização automática garantida fora da agenda.
+- **Lote ausente ou RPA atrasado:** o dashboard mantém o último lote; confirme a publicação analítica e reexecute o job.
+- **Falha de qualidade Silver:** consulte `motta_analytics.silver.quality_results`; corrija a origem e publique novo lote. Gold preserva o lote anterior.
+- **Falha de reconciliação Gold:** compare subtotal dos itens com receita das vendas concluídas; Gold não deve avançar o marcador.
+- **Dashboard vazio:** verifique lote, filtros e a permissão individual para Gold e warehouse. Zero vendas pode ser legítimo.
+- **Reprocessamento:** execute novamente o job após a correção. As tabelas por lote e marcadores tornam o processo idempotente; não apague o lote anterior manualmente.
 
-No Free Edition, use uma execução por vez e monitore as cotas serverless. O ambiente é adequado para desenvolvimento e demonstração; sua disponibilidade não possui SLA.
+O dashboard representa a fotografia do corte efetivo, não tempo real. O painel foi publicado sem credenciais embutidas (`embed_credentials=false`); conceda somente as permissões necessárias aos leitores. O [run 97850894011189](https://dbc-38ac8920-cbf4.cloud.databricks.com/jobs/731348243647869/runs/97850894011189?o=7474654317437663) concluiu as cinco tarefas em 29/10/2026.

@@ -1,38 +1,24 @@
-# Mottainai BI no Databricks
+# Mottainai BI — Databricks
 
-Este repositório versiona a camada de BI. O RPA existente publica a carga diária das 02:00 no PostgreSQL **analítico físico**; o Databricks lê apenas a publicação concluída, prepara tabelas Delta em Bronze e Silver e expõe views Gold para dashboards. O PostgreSQL operacional é consultado somente no teste de conexão.
+O BI consome a fotografia diária de `MOTTAINAI_ANALITICO`, publicada pelo RPA a partir de `MOTTAINAI` às 02:00 em São Paulo. O job Databricks inicia às 02:30 e executa cinco tarefas sequenciais:
 
 ```text
-PostgreSQL operacional ──RPA 02:00──> PostgreSQL analítico
-          │                                  │
-          └── teste de conexão               └── catálogo federado, somente leitura
-                                                │
-                                                ▼
-                                   Bronze → Silver → Gold → dashboard
+preflight → bronze → silver → gold → refresh_dashboard
 ```
 
-O job está em [databricks.yml](databricks.yml). Ele possui preflight e refresh, com agenda de contingência às **02:30 em America/Sao_Paulo**, inicialmente pausada até a validação das conexões. Executar manualmente o job após uma publicação analítica também é seguro: o `batch_id` evita processamento duplicado. A atualização por evento após qualquer publicação fora do horário exige conectar o final bem-sucedido do RPA à API `run-now` do job; essa integração depende do ID do job implantado e ainda não está ativa.
+- **Bronze:** cópia Delta do lote analítico publicado, com contagens reconciliadas.
+- **Silver:** dimensões e fatos tipados, limpeza e testes de qualidade, com marcador de publicação próprio.
+- **Gold:** métricas comerciais e de estoque derivadas do Silver, com um único lote visível ao dashboard.
 
-## Preparação do workspace
+As três camadas ficam em `motta_analytics.bronze`, `motta_analytics.silver` e `motta_analytics.gold`; `motta_analytics.control` guarda os marcadores. O dashboard consulta apenas Gold. O banco operacional é usado no preflight para conferir a conexão, sem alimentar os gráficos diretamente. Credenciais ficam nas conexões Unity Catalog.
 
-1. Confirme que existem dois catálogos estrangeiros PostgreSQL distintos: um aponta ao banco operacional, outro ao banco analítico físico. Eles são somente leitura no Databricks. A conexão ao analítico precisa enxergar `mottainai_analytics.vw_published_batch`, `vw_sales_daily_kpis`, `vw_monthly_summary` e `vw_critical_stock`.
-2. Escolha um catálogo gerenciado existente para as tabelas Delta, por exemplo `workspace` no Free Edition. O preflight cria os schemas `mottainai_bronze`, `mottainai_silver`, `mottainai_gold` e `mottainai_control` nesse catálogo.
-3. Configure as variáveis do bundle `operational_catalog`, `analytics_catalog` e `target_catalog`. Nunca coloque usuário, senha ou host dos bancos no Git; as conexões Unity Catalog já guardam essas informações.
-4. Valide o bundle e execute o job manualmente após existir um lote `PUBLISHED` no analítico. Confira a view Gold `dashboard_freshness` e compare seu `batch_id` com a view PostgreSQL `vw_published_batch`.
-5. Depois de validar a duração da carga das 02:00, ative a agenda de contingência no job. Para atualização por evento, configure a chamada do RPA ao job **somente depois** da publicação do lote e crie a tarefa de refresh do dashboard publicado como dependente do refresh Gold.
+## Entregáveis
 
-O preflight e as regras de limpeza estão nos [notebooks](notebooks). O [runbook](docs/RUNBOOK.md) traz as consultas de verificação e as condições de publicação.
+- [Dashboard publicado](https://dbc-38ac8920-cbf4.cloud.databricks.com/sql/dashboardsv3/01f1d22904b81b738aef457d6a67f354/published?o=7474654317437663)
+- [Job Databricks](https://dbc-38ac8920-cbf4.cloud.databricks.com/jobs/731348243647869?o=7474654317437663)
+- [Execução validada, cinco tarefas](https://dbc-38ac8920-cbf4.cloud.databricks.com/jobs/731348243647869/runs/97850894011189?o=7474654317437663)
+- [Relatório gerencial](docs/RELATORIO_GERENCIAL.md), [matriz de evidências](docs/ENTREGA_BI.md), [especificação do painel](dashboard/README.md) e [runbook](docs/RUNBOOK.md).
 
-## Datasets iniciais
+O dashboard apresenta três páginas: visão executiva, estoque e distribuição/qualidade. Há filtros globais de período e loja. A amostra atual contém somente um dia de vendas e uma loja vendedora; comparação temporal e dispersão devem ser interpretadas como testes de visualização até que exista histórico suficiente. O mapa permanece condicional porque a origem não possui coordenadas.
 
-| Origem no banco analítico | Bronze | Silver | Gold |
-|---|---|---|---|
-| `vw_sales_daily_kpis` | cópia por lote | datas, IDs e medidas tipadas; rejeita valores negativos e chaves nulas | vendas diárias por loja |
-| `vw_monthly_summary` | cópia por lote | mês e medidas tipadas; rejeita chaves nulas e medidas negativas | resumo mensal |
-| `vw_critical_stock` | cópia por lote | quantidades tipadas; sinaliza estoque negativo e rejeita limiar inválido | estoque crítico |
-
-As demais views prioritárias (`vw_stockout_analysis`, `vw_product_risk_ranking`, `vw_executive_dashboard` e `mv_dashboard_metrics`) serão incluídas após conferir os respectivos contratos e uma execução real no workspace. O dashboard deve consultar **somente Gold**, nunca o operacional nem os catálogos federados.
-
-## Estado
-
-Os arquivos estão preparados no Git. A implantação, a execução real contra os dois catálogos e a criação do dashboard dependem de acesso ao workspace Databricks. Sem essa execução, não há confirmação de conectividade ou de dados publicados.
+A [PR RPA #11](https://github.com/Mottainai-One/Mottanai-RPA/pull/11) contém a correção de publicação diária e ainda depende do fluxo de revisão/merge da equipe. Uma carga concluída fora da janela diária exige executar o job Databricks manualmente após confirmar o novo lote.
