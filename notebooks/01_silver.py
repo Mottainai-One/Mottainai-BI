@@ -7,7 +7,7 @@ import uuid
 from pyspark.sql import functions as F
 
 
-MODEL_VERSION = "2"
+MODEL_VERSION = "5"
 
 
 def identifier(value):
@@ -104,6 +104,13 @@ frames = {
         "cast(discount_amount as decimal(20,2)) discount_amount",
         "cast(subtotal as decimal(20,2)) subtotal",
     ),
+    "fact_sale_payment": staged("fact_sale_payment").selectExpr(
+        "_batch_id", "cast(payment_id as long) payment_id",
+        "cast(sale_id as long) sale_id", "cast(sale_date as date) sale_date",
+        "cast(store_id as long) store_id", "upper(trim(payment_method)) payment_method",
+        "cast(amount as decimal(20,2)) amount",
+        "cast(installments as int) installments",
+    ),
     "fact_inventory_snapshot": staged("fact_inventory_snapshot").selectExpr(
         "_batch_id", "cast(inventory_id as long) inventory_id",
         "cast(snapshot_date as date) snapshot_date",
@@ -146,6 +153,13 @@ invalid = {
         | (F.col("quantity") <= 0) | (F.col("unit_price") < 0)
         | (F.col("discount_amount") < 0) | (F.col("subtotal") < 0)
     ),
+    "fact_sale_payment": lambda f: (
+        F.col("payment_id").isNull() | F.col("sale_id").isNull()
+        | F.col("sale_date").isNull() | F.col("store_id").isNull()
+        | F.col("payment_method").isNull() | (F.length("payment_method") == 0)
+        | F.col("amount").isNull() | (F.col("amount") < 0)
+        | ((F.col("installments").isNotNull()) & (F.col("installments") < 1))
+    ),
     "fact_inventory_snapshot": lambda f: (
         F.col("inventory_id").isNull() | F.col("snapshot_date").isNull()
         | F.col("company_id").isNull() | F.col("store_id").isNull()
@@ -159,7 +173,8 @@ invalid = {
 keys = {
     "dim_store": ["store_id"], "dim_category": ["category_id"],
     "dim_product": ["product_id"], "fact_sales": ["sale_id", "sale_date"],
-    "fact_sale_item": ["sale_item_id"], "fact_inventory_snapshot": ["inventory_id", "snapshot_date"],
+    "fact_sale_item": ["sale_item_id"], "fact_sale_payment": ["payment_id"],
+    "fact_inventory_snapshot": ["inventory_id", "snapshot_date"],
 }
 
 quality = []
@@ -176,6 +191,7 @@ relationships = {
     "sales_without_store": frames["fact_sales"].select("store_id").join(store_ids, "store_id", "left_anti").count(),
     "items_without_sale": frames["fact_sale_item"].join(sale_ids, ["sale_id", "sale_date", "store_id"], "left_anti").count(),
     "items_without_product": frames["fact_sale_item"].select("product_id").join(product_ids, "product_id", "left_anti").count(),
+    "payments_without_sale": frames["fact_sale_payment"].join(sale_ids, ["sale_id", "sale_date", "store_id"], "left_anti").count(),
     "inventory_without_store": frames["fact_inventory_snapshot"].select("store_id").join(store_ids, "store_id", "left_anti").count(),
     "inventory_without_product": frames["fact_inventory_snapshot"].select("product_id").join(product_ids, "product_id", "left_anti").count(),
 }

@@ -5,7 +5,7 @@ import re
 import uuid
 
 
-MODEL_VERSION = "2"
+MODEL_VERSION = "5"
 
 
 def identifier(value):
@@ -99,6 +99,23 @@ WHERE i._batch_id={literal(batch)} AND s.status='COMPLETED'
 if abs(sales - items) > 0.01:
     raise RuntimeError(f"Sales and item revenue do not reconcile: {sales} vs {items}")
 
+# Pagamentos podem ser divididos entre métodos; a conciliação é por venda.
+unreconciled = spark.sql(f"""
+SELECT count(*) AS n
+FROM {silver}.`fact_sales` s
+LEFT JOIN (
+  SELECT sale_id,sale_date,store_id,_batch_id,sum(amount) AS paid
+  FROM {silver}.`fact_sale_payment`
+  WHERE _batch_id={literal(batch)}
+  GROUP BY sale_id,sale_date,store_id,_batch_id
+) p ON p.sale_id=s.sale_id AND p.sale_date=s.sale_date
+   AND p.store_id=s.store_id AND p._batch_id=s._batch_id
+WHERE s._batch_id={literal(batch)} AND s.status='COMPLETED'
+  AND abs(s.net_amount-coalesce(p.paid,0)) > 0.01
+""").first()["n"]
+if unreconciled:
+    raise RuntimeError(f"Completed sales with unreconciled payments: {unreconciled}")
+
 # Gold views are computed from Silver facts and dimensions, with no direct
 # dependency on PostgreSQL business views. The publication pointer is their
 # only batch selector, so every widget sees the same coherent snapshot.
@@ -143,6 +160,21 @@ views = {
         GROUP BY i.sale_date,i.store_id,st.store_name,i.product_id,pr.product_name,
                  pr.category_id,c.category_name,i._batch_id
     """,
+    "payment_mix": f"""
+        SELECT py.sale_date,py.store_id,st.store_name,py.payment_method,
+               count(*) AS payment_count,count(DISTINCT py.sale_id) AS sales_with_method,
+               sum(py.amount) AS paid_amount,py._batch_id
+        FROM {silver}.`fact_sale_payment` py
+        JOIN {silver}.`fact_sales` s ON s.sale_id=py.sale_id
+         AND s.sale_date=py.sale_date AND s.store_id=py.store_id
+         AND s._batch_id=py._batch_id
+        JOIN {silver}.`dim_store` st ON st.store_id=py.store_id
+         AND st._batch_id=py._batch_id
+        JOIN {publication} p ON p.batch_id=py._batch_id
+         AND p.pipeline='operational_to_analytics_daily'
+        WHERE s.status='COMPLETED'
+        GROUP BY py.sale_date,py.store_id,st.store_name,py.payment_method,py._batch_id
+    """,
     "inventory_batches": f"""
         WITH latest AS (
           SELECT store_id,product_id,max(snapshot_date) snapshot_date
@@ -169,12 +201,32 @@ views = {
         SELECT snapshot_date,company_id,store_id,store_name,product_id,product_name,
                sum(quantity) on_hand_quantity,sum(reserved_quantity) reserved_quantity,
                sum(available_quantity) available_quantity,
-               sum(stock_value) stock_value,max(minimum_quantity) minimum_quantity,
+               CASE WHEN count_if(stock_value IS NULL)>0 THEN NULL
+                    ELSE sum(stock_value) END stock_value,
+               count_if(stock_value IS NULL) cost_missing_lot_count,
+               max(minimum_quantity) minimum_quantity,
+               min(days_to_expiry) nearest_expiry_days,
                sum(CASE WHEN days_to_expiry BETWEEN 0 AND 30
-                        THEN stock_value ELSE 0 END) value_expiring_30d,
-               sum(CASE WHEN days_to_expiry < 0 THEN stock_value ELSE 0 END) expired_value,
+                        THEN quantity ELSE 0 END) quantity_expiring_30d,
+               sum(CASE WHEN days_to_expiry < 0 THEN quantity ELSE 0 END) expired_quantity,
+               CASE WHEN count_if(days_to_expiry BETWEEN 0 AND 30
+                                  AND stock_value IS NULL)>0 THEN NULL
+                    ELSE sum(CASE WHEN days_to_expiry BETWEEN 0 AND 30
+                                  THEN stock_value ELSE 0 END) END value_expiring_30d,
+               CASE WHEN count_if(days_to_expiry < 0 AND stock_value IS NULL)>0 THEN NULL
+                    ELSE sum(CASE WHEN days_to_expiry < 0
+                                  THEN stock_value ELSE 0 END) END expired_value,
                CASE WHEN sum(available_quantity) < max(minimum_quantity)
                     THEN true ELSE false END below_minimum,
+               CASE
+                 WHEN sum(CASE WHEN days_to_expiry < 0 THEN quantity ELSE 0 END)>0
+                   THEN 'Vencido'
+                 WHEN sum(CASE WHEN days_to_expiry BETWEEN 0 AND 30 THEN quantity ELSE 0 END)>0
+                   THEN 'Vence em 30 dias'
+                 WHEN sum(available_quantity) < max(minimum_quantity)
+                   THEN 'Abaixo do mínimo'
+                 ELSE 'Sem alerta'
+               END risk_status,
                count(*) batch_count,_batch_id
         FROM {gold}.`inventory_batches`
         GROUP BY snapshot_date,company_id,store_id,store_name,product_id,product_name,_batch_id

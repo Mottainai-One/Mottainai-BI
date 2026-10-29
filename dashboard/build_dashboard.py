@@ -82,9 +82,38 @@ datasets = [
     {"name": "ds_tickets", "displayName": "Tickets concluídos", "queryLines": [sql_file("04_ticket_distribution.sql")]},
     {"name": "ds_inventory", "displayName": "Saúde do estoque", "queryLines": [sql_file("05_stock_risk.sql")]},
     {"name": "ds_product", "displayName": "Vendas por produto", "queryLines": [sql_file("08_product_sales.sql")]},
+    {"name": "ds_payment", "displayName": "Pagamentos conciliados", "queryLines": [sql_file("11_payment_mix.sql")]},
     {"name": "ds_batches", "displayName": "Lotes de estoque", "queryLines": [sql_file("09_inventory_batches.sql")]},
     {"name": "ds_freshness", "displayName": "Frescor do lote", "queryLines": [sql_file("07_freshness.sql")]},
     {"name": "ds_quality", "displayName": "Qualidade Silver", "queryLines": [sql_file("10_quality.sql")]},
+]
+
+commercial = [
+    layout(text_widget("commercial-header", ["# Comercial  |  Cobertura e composição\n", "\n", "Lojas e produtos com vendas no período; métodos de pagamento das vendas concluídas. Base pequena indica cobertura limitada."]), 0, 0, 12, 2),
+    layout(counter("selling-stores", "Lojas com vendas", "COUNT(DISTINCT `store_id`)", dataset="ds_sales"), 0, 2, 3, 3),
+    layout(counter("selling-products", "Produtos vendidos", "COUNT(DISTINCT `product_id`)", dataset="ds_product"), 3, 2, 3, 3),
+    layout(counter("units-sold", "Unidades vendidas", "SUM(`units_sold`)", dataset="ds_product"), 6, 2, 3, 3),
+    layout(counter("payment-methods", "Métodos de pagamento", "COUNT(DISTINCT `payment_method`)", dataset="ds_payment"), 9, 2, 3, 3),
+    layout(chart("payment-bars", "ds_payment", "bar", 3,
+                 [field("payment_method"), field("paid", "SUM(`paid_amount`)")],
+                 {"x": {"fieldName": "paid", "scale": {"type": "quantitative"}, "format": BRL},
+                  "y": {"fieldName": "payment_method", "scale": {"type": "categorical"}}},
+                 "Valor pago por método"), 0, 5, 6, 6),
+    layout(chart("product-bars", "ds_product", "bar", 3,
+                 [field("product_name"), field("revenue", "SUM(`net_revenue`)")],
+                 {"x": {"fieldName": "revenue", "scale": {"type": "quantitative"}, "format": BRL},
+                  "y": {"fieldName": "product_name", "scale": {"type": "categorical"}}},
+                 "Receita por produto"), 6, 5, 6, 6),
+    layout(chart("payment-table", "ds_payment", "table", 2,
+                 [field("sale_date"), field("store_name"), field("payment_method"),
+                  field("payment_count"), field("sales_with_method"), field("paid_amount")],
+                 {"columns": [{"fieldName": "sale_date", "displayName": "Data"},
+                              {"fieldName": "store_name", "displayName": "Loja"},
+                              {"fieldName": "payment_method", "displayName": "Método"},
+                              {"fieldName": "payment_count", "displayName": "Pagamentos"},
+                              {"fieldName": "sales_with_method", "displayName": "Vendas com método"},
+                              {"fieldName": "paid_amount", "displayName": "Valor (BRL)", "format": BRL}]},
+                 "Pagamentos conciliados", aggregated=False), 0, 11, 12, 5),
 ]
 
 executive = [
@@ -123,7 +152,7 @@ executive = [
 
 stock = [
     layout(text_widget("stock-header", ["# Estoque  |  Disponibilidade e valor\n", "\n", "Fotografia do produto por loja e lote; usa a data mais recente de cada produto. O filtro de data afeta vendas, não esta página."]), 0, 0, 12, 2),
-    layout(counter("on-hand", "Unidades em estoque", "SUM(`on_hand_quantity`)", dataset="ds_inventory"), 0, 2, 3, 3),
+    layout(counter("risk-products", "Produtos com alerta por loja", "COUNT_IF(`risk_status` <> 'Sem alerta')", dataset="ds_inventory"), 0, 2, 3, 3),
     layout(counter("available", "Unidades disponíveis", "SUM(`available_quantity`)", dataset="ds_inventory"), 3, 2, 3, 3),
     layout(counter("stock-value", "Valor em estoque · BRL", "SUM(`stock_value`)", fmt=BRL, dataset="ds_inventory"), 6, 2, 3, 3),
     layout(counter("expiring", "Vence em 30 dias · BRL", "SUM(`value_expiring_30d`)", fmt=BRL, dataset="ds_inventory"), 9, 2, 3, 3),
@@ -131,12 +160,20 @@ stock = [
                  [field("product_name"), field("available", "SUM(`available_quantity`)")],
                  {"x": {"fieldName": "available", "scale": {"type": "quantitative"}},
                   "y": {"fieldName": "product_name", "scale": {"type": "categorical"}}},
-                 "Disponível por produto"), 0, 5, 6, 6),
-    layout(chart("stock-value-bars", "ds_inventory", "bar", 3,
-                 [field("product_name"), field("value", "SUM(`stock_value`)")],
-                 {"x": {"fieldName": "value", "scale": {"type": "quantitative"}, "format": BRL},
-                  "y": {"fieldName": "product_name", "scale": {"type": "categorical"}}},
-                 "Valor por produto"), 6, 5, 6, 6),
+                 "Disponível por produto"), 0, 5, 12, 5),
+    layout(chart("stock-actions", "ds_inventory", "table", 2,
+                 [field("store_name"), field("product_name"), field("risk_status"),
+                  field("available_quantity"), field("minimum_quantity"), field("cost_missing_lot_count"),
+                  field("nearest_expiry_days"), field("quantity_expiring_30d")],
+                 {"columns": [{"fieldName": "store_name", "displayName": "Loja"},
+                              {"fieldName": "product_name", "displayName": "Produto"},
+                              {"fieldName": "risk_status", "displayName": "Situação"},
+                              {"fieldName": "available_quantity", "displayName": "Disponível"},
+                              {"fieldName": "minimum_quantity", "displayName": "Mínimo"},
+                              {"fieldName": "cost_missing_lot_count", "displayName": "Lotes sem custo"},
+                              {"fieldName": "nearest_expiry_days", "displayName": "Dias até validade"},
+                              {"fieldName": "quantity_expiring_30d", "displayName": "Unid. a vencer"}]},
+                 "Prioridade por loja e produto", aggregated=False), 0, 10, 12, 6),
     layout(chart("batch-details", "ds_batches", "table", 2,
                  [field("store_name"), field("product_name"), field("source_batch_id"),
                   field("available_quantity"), field("stock_value"), field("expiration_date")],
@@ -146,7 +183,7 @@ stock = [
                               {"fieldName": "available_quantity", "displayName": "Disponível"},
                               {"fieldName": "stock_value", "displayName": "Valor (BRL)", "format": BRL},
                               {"fieldName": "expiration_date", "displayName": "Validade"}]},
-                 "Lotes e vencimentos", aggregated=False), 0, 11, 12, 6),
+                 "Lotes e vencimentos", aggregated=False), 0, 16, 12, 6),
 ]
 
 distribution = [
@@ -173,16 +210,19 @@ distribution = [
 filters = [
     layout(filter_widget("filter-period", "filter-date-range-picker", "Período das vendas",
                          [("ds_period", "period", True), ("ds_sales", "sale_date", False),
-                          ("ds_tickets", "sale_date", False), ("ds_product", "sale_date", False)]), 0, 0, 6, 2),
+                          ("ds_tickets", "sale_date", False), ("ds_product", "sale_date", False),
+                          ("ds_payment", "sale_date", False)]), 0, 0, 6, 2),
     layout(filter_widget("filter-store", "filter-multi-select", "Loja",
                          [(name, "store_id", False) for name in
-                          ("ds_period", "ds_sales", "ds_tickets", "ds_product", "ds_inventory", "ds_batches")]), 6, 0, 6, 2),
+                          ("ds_period", "ds_sales", "ds_tickets", "ds_product", "ds_payment", "ds_inventory", "ds_batches")]), 6, 0, 6, 2),
 ]
 
 dashboard = {
     "datasets": datasets,
     "pages": [
         {"name": "executive", "displayName": "Visão executiva", "layout": executive,
+         "pageType": "PAGE_TYPE_CANVAS", "layoutVersion": "GRID_V1"},
+        {"name": "commercial", "displayName": "Comercial", "layout": commercial,
          "pageType": "PAGE_TYPE_CANVAS", "layoutVersion": "GRID_V1"},
         {"name": "stock", "displayName": "Estoque", "layout": stock,
          "pageType": "PAGE_TYPE_CANVAS", "layoutVersion": "GRID_V1"},

@@ -22,6 +22,8 @@ O catálogo gerenciado de destino é `motta_analytics`. Os schemas `bronze`, `si
 SELECT * FROM motta_analytics.gold.dashboard_freshness;
 SELECT count(*) AS vendas FROM motta_analytics.gold.sales_tickets;
 SELECT sum(revenue_brl) AS receita FROM motta_analytics.gold.sales_daily;
+SELECT payment_method, sum(paid_amount) AS valor_pago
+FROM motta_analytics.gold.payment_mix GROUP BY payment_method;
 SELECT sum(available_quantity) AS unidades_disponiveis,
        sum(stock_value) AS valor_estoque
 FROM motta_analytics.gold.inventory_health;
@@ -36,8 +38,10 @@ No PostgreSQL, conecte-se **ao database `MOTTAINAI_ANALITICO`** e execute `SELEC
 
 - **Lote ausente ou RPA atrasado:** o dashboard mantém o último lote; confirme a publicação analítica e reexecute o job.
 - **Falha de qualidade Silver:** consulte `motta_analytics.silver.quality_results`; corrija a origem e publique novo lote. Gold preserva o lote anterior.
-- **Falha de reconciliação Gold:** compare subtotal dos itens com receita das vendas concluídas; Gold não deve avançar o marcador.
+- **Falha de reconciliação Gold:** compare subtotal dos itens e soma dos pagamentos por venda com a receita das vendas concluídas; Gold não deve avançar o marcador.
 - **Dashboard vazio:** verifique lote, filtros e a permissão individual para Gold e warehouse. Zero vendas pode ser legítimo.
 - **Reprocessamento:** execute novamente o job após a correção. As tabelas por lote e marcadores tornam o processo idempotente; não apague o lote anterior manualmente.
 
-O dashboard representa a fotografia do corte efetivo, não tempo real. O painel foi publicado sem credenciais embutidas (`embed_credentials=false`); conceda somente as permissões necessárias aos leitores. O [run 97850894011189](https://dbc-38ac8920-cbf4.cloud.databricks.com/jobs/731348243647869/runs/97850894011189?o=7474654317437663) concluiu as cinco tarefas em 29/10/2026.
+O dashboard representa a fotografia do corte efetivo, não tempo real. O painel foi publicado sem credenciais embutidas (`embed_credentials=false`); conceda somente as permissões necessárias aos leitores. O [run 906604160409285](https://dbc-38ac8920-cbf4.cloud.databricks.com/jobs/731348243647869/runs/906604160409285?o=7474654317437663) concluiu as cinco tarefas em 29/10/2026.
+
+O [run 608262702654119](https://dbc-38ac8920-cbf4.cloud.databricks.com/jobs/731348243647869/runs/608262702654119?o=7474654317437663) confirmou o refresh da revisão final publicada.

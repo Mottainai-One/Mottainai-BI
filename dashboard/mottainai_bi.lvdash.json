@@ -44,7 +44,7 @@
       "name": "ds_inventory",
       "displayName": "Saúde do estoque",
       "queryLines": [
-        "SELECT snapshot_date, store_id, store_name, product_id, product_name,\n       on_hand_quantity, reserved_quantity, available_quantity, stock_value,\n       minimum_quantity, value_expiring_30d, expired_value, below_minimum, batch_count\nFROM motta_analytics.gold.inventory_health"
+        "SELECT snapshot_date, store_id, store_name, product_id, product_name,\n       on_hand_quantity, reserved_quantity, available_quantity, stock_value,\n       minimum_quantity, cost_missing_lot_count, nearest_expiry_days, quantity_expiring_30d,\n       expired_quantity, value_expiring_30d, expired_value,\n       below_minimum, risk_status, batch_count\nFROM motta_analytics.gold.inventory_health"
       ]
     },
     {
@@ -52,6 +52,13 @@
       "displayName": "Vendas por produto",
       "queryLines": [
         "SELECT sale_date, store_id, store_name, product_id, product_name,\n       category_name, units_sold, net_revenue, sales_with_product\nFROM motta_analytics.gold.product_sales_daily"
+      ]
+    },
+    {
+      "name": "ds_payment",
+      "displayName": "Pagamentos conciliados",
+      "queryLines": [
+        "SELECT sale_date, store_id, store_name, payment_method,\n       payment_count, sales_with_method, paid_amount\nFROM motta_analytics.gold.payment_mix"
       ]
     },
     {
@@ -571,6 +578,402 @@
       "layoutVersion": "GRID_V1"
     },
     {
+      "name": "commercial",
+      "displayName": "Comercial",
+      "layout": [
+        {
+          "widget": {
+            "name": "commercial-header",
+            "multilineTextboxSpec": {
+              "lines": [
+                "# Comercial  |  Cobertura e composição\n",
+                "\n",
+                "Lojas e produtos com vendas no período; métodos de pagamento das vendas concluídas. Base pequena indica cobertura limitada."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "selling-stores",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_sales",
+                  "fields": [
+                    {
+                      "name": "value",
+                      "expression": "COUNT(DISTINCT `store_id`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "value",
+                  "displayName": "Lojas com vendas"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Lojas com vendas"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "selling-products",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_product",
+                  "fields": [
+                    {
+                      "name": "value",
+                      "expression": "COUNT(DISTINCT `product_id`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "value",
+                  "displayName": "Produtos vendidos"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Produtos vendidos"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 2,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "units-sold",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_product",
+                  "fields": [
+                    {
+                      "name": "value",
+                      "expression": "SUM(`units_sold`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "value",
+                  "displayName": "Unidades vendidas"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Unidades vendidas"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 2,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "payment-methods",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_payment",
+                  "fields": [
+                    {
+                      "name": "value",
+                      "expression": "COUNT(DISTINCT `payment_method`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "value",
+                  "displayName": "Métodos de pagamento"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Métodos de pagamento"
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 2,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "payment-bars",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_payment",
+                  "fields": [
+                    {
+                      "name": "payment_method",
+                      "expression": "`payment_method`"
+                    },
+                    {
+                      "name": "paid",
+                      "expression": "SUM(`paid_amount`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "paid",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "BRL",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 2
+                    }
+                  }
+                },
+                "y": {
+                  "fieldName": "payment_method",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Valor pago por método"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "product-bars",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_product",
+                  "fields": [
+                    {
+                      "name": "product_name",
+                      "expression": "`product_name`"
+                    },
+                    {
+                      "name": "revenue",
+                      "expression": "SUM(`net_revenue`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "revenue",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "BRL",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 2
+                    }
+                  }
+                },
+                "y": {
+                  "fieldName": "product_name",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Receita por produto"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 5,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "payment-table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_payment",
+                  "fields": [
+                    {
+                      "name": "sale_date",
+                      "expression": "`sale_date`"
+                    },
+                    {
+                      "name": "store_name",
+                      "expression": "`store_name`"
+                    },
+                    {
+                      "name": "payment_method",
+                      "expression": "`payment_method`"
+                    },
+                    {
+                      "name": "payment_count",
+                      "expression": "`payment_count`"
+                    },
+                    {
+                      "name": "sales_with_method",
+                      "expression": "`sales_with_method`"
+                    },
+                    {
+                      "name": "paid_amount",
+                      "expression": "`paid_amount`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "sale_date",
+                    "displayName": "Data"
+                  },
+                  {
+                    "fieldName": "store_name",
+                    "displayName": "Loja"
+                  },
+                  {
+                    "fieldName": "payment_method",
+                    "displayName": "Método"
+                  },
+                  {
+                    "fieldName": "payment_count",
+                    "displayName": "Pagamentos"
+                  },
+                  {
+                    "fieldName": "sales_with_method",
+                    "displayName": "Vendas com método"
+                  },
+                  {
+                    "fieldName": "paid_amount",
+                    "displayName": "Valor (BRL)",
+                    "format": {
+                      "type": "number-currency",
+                      "currencyCode": "BRL",
+                      "decimalPlaces": {
+                        "type": "max",
+                        "places": 2
+                      }
+                    }
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Pagamentos conciliados"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 11,
+            "width": 12,
+            "height": 5
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
       "name": "stock",
       "displayName": "Estoque",
       "layout": [
@@ -594,7 +997,7 @@
         },
         {
           "widget": {
-            "name": "on-hand",
+            "name": "risk-products",
             "queries": [
               {
                 "name": "main_query",
@@ -603,7 +1006,7 @@
                   "fields": [
                     {
                       "name": "value",
-                      "expression": "SUM(`on_hand_quantity`)"
+                      "expression": "COUNT_IF(`risk_status` <> 'Sem alerta')"
                     }
                   ],
                   "disaggregated": false
@@ -616,12 +1019,12 @@
               "encodings": {
                 "value": {
                   "fieldName": "value",
-                  "displayName": "Unidades em estoque"
+                  "displayName": "Produtos com alerta por loja"
                 }
               },
               "frame": {
                 "showTitle": true,
-                "title": "Unidades em estoque"
+                "title": "Produtos com alerta por loja"
               }
             }
           },
@@ -816,13 +1219,13 @@
           "position": {
             "x": 0,
             "y": 5,
-            "width": 6,
-            "height": 6
+            "width": 12,
+            "height": 5
           }
         },
         {
           "widget": {
-            "name": "stock-value-bars",
+            "name": "stock-actions",
             "queries": [
               {
                 "name": "main_query",
@@ -830,53 +1233,91 @@
                   "datasetName": "ds_inventory",
                   "fields": [
                     {
+                      "name": "store_name",
+                      "expression": "`store_name`"
+                    },
+                    {
                       "name": "product_name",
                       "expression": "`product_name`"
                     },
                     {
-                      "name": "value",
-                      "expression": "SUM(`stock_value`)"
+                      "name": "risk_status",
+                      "expression": "`risk_status`"
+                    },
+                    {
+                      "name": "available_quantity",
+                      "expression": "`available_quantity`"
+                    },
+                    {
+                      "name": "minimum_quantity",
+                      "expression": "`minimum_quantity`"
+                    },
+                    {
+                      "name": "cost_missing_lot_count",
+                      "expression": "`cost_missing_lot_count`"
+                    },
+                    {
+                      "name": "nearest_expiry_days",
+                      "expression": "`nearest_expiry_days`"
+                    },
+                    {
+                      "name": "quantity_expiring_30d",
+                      "expression": "`quantity_expiring_30d`"
                     }
                   ],
-                  "disaggregated": false
+                  "disaggregated": true
                 }
               }
             ],
             "spec": {
-              "version": 3,
-              "widgetType": "bar",
+              "version": 2,
+              "widgetType": "table",
               "encodings": {
-                "x": {
-                  "fieldName": "value",
-                  "scale": {
-                    "type": "quantitative"
+                "columns": [
+                  {
+                    "fieldName": "store_name",
+                    "displayName": "Loja"
                   },
-                  "format": {
-                    "type": "number-currency",
-                    "currencyCode": "BRL",
-                    "decimalPlaces": {
-                      "type": "max",
-                      "places": 2
-                    }
+                  {
+                    "fieldName": "product_name",
+                    "displayName": "Produto"
+                  },
+                  {
+                    "fieldName": "risk_status",
+                    "displayName": "Situação"
+                  },
+                  {
+                    "fieldName": "available_quantity",
+                    "displayName": "Disponível"
+                  },
+                  {
+                    "fieldName": "minimum_quantity",
+                    "displayName": "Mínimo"
+                  },
+                  {
+                    "fieldName": "cost_missing_lot_count",
+                    "displayName": "Lotes sem custo"
+                  },
+                  {
+                    "fieldName": "nearest_expiry_days",
+                    "displayName": "Dias até validade"
+                  },
+                  {
+                    "fieldName": "quantity_expiring_30d",
+                    "displayName": "Unid. a vencer"
                   }
-                },
-                "y": {
-                  "fieldName": "product_name",
-                  "scale": {
-                    "type": "categorical"
-                  }
-                }
+                ]
               },
               "frame": {
                 "showTitle": true,
-                "title": "Valor por produto"
+                "title": "Prioridade por loja e produto"
               }
             }
           },
           "position": {
-            "x": 6,
-            "y": 5,
-            "width": 6,
+            "x": 0,
+            "y": 10,
+            "width": 12,
             "height": 6
           }
         },
@@ -965,7 +1406,7 @@
           },
           "position": {
             "x": 0,
-            "y": 11,
+            "y": 16,
             "width": 12,
             "height": 6
           }
@@ -1228,6 +1669,19 @@
                     }
                   ]
                 }
+              },
+              {
+                "name": "q_ds_payment",
+                "query": {
+                  "datasetName": "ds_payment",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "name": "sale_date",
+                      "expression": "`sale_date`"
+                    }
+                  ]
+                }
               }
             ],
             "spec": {
@@ -1250,6 +1704,10 @@
                   {
                     "fieldName": "sale_date",
                     "queryName": "q_ds_product"
+                  },
+                  {
+                    "fieldName": "sale_date",
+                    "queryName": "q_ds_payment"
                   }
                 ]
               },
@@ -1336,6 +1794,19 @@
                 }
               },
               {
+                "name": "q_ds_payment",
+                "query": {
+                  "datasetName": "ds_payment",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "name": "store_id",
+                      "expression": "`store_id`"
+                    }
+                  ]
+                }
+              },
+              {
                 "name": "q_ds_inventory",
                 "query": {
                   "datasetName": "ds_inventory",
@@ -1382,6 +1853,10 @@
                   {
                     "fieldName": "store_id",
                     "queryName": "q_ds_product"
+                  },
+                  {
+                    "fieldName": "store_id",
+                    "queryName": "q_ds_payment"
                   },
                   {
                     "fieldName": "store_id",
