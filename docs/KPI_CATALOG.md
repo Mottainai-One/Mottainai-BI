@@ -26,6 +26,19 @@ Este catálogo separa indicadores calculáveis e verificáveis hoje daqueles que
 
 O alerta de validade depende da **quantidade do lote**, mesmo quando o custo médio está ausente. Nesse caso, a quantidade em risco permanece visível e o valor monetário fica indisponível; não converter custo desconhecido em perda igual a zero.
 
+## Indicadores operacionais preparados para a próxima carga
+
+Os oito fatos físicos da migração `15_operational_kpi_facts.sql` passam pela Bronze e Silver com validação de chaves, medidas, datas e vínculos. A Gold publica acuracidade das posições contadas, divergência absoluta, conclusão de transferências, reposição observada, doações, descartes e funil de alertas. O painel mostra esses resultados na página **Operações e perdas** e na aba Data (`ds_operations`, `ds_counts`, `ds_destinations`). Sem eventos elegíveis, o valor fica nulo. Em 30/10/2026, todos os oito fatos ainda tinham zero linhas no analítico; executar o data load operacional e a RPA diária é necessário para exibir números reais.
+
+| KPI | População e fórmula | Limite de interpretação |
+|---|---|---|
+| Acuracidade | Posições concluídas com quantidade igual / posições concluídas | Não mede cobertura do inventário inteiro |
+| Divergência absoluta | Soma de `abs(contado - sistema)` em posições concluídas | Unidades; valor a custo exige custo em todas as posições |
+| Conclusão de transferências | Transferências concluídas / transferências com itens | Não prova venda ou desperdício evitado |
+| Reposição observada | Quantidade executada / sugerida em pré-listas com execução concluída | Exclui pré-listas sem conclusão; não é cobertura geral |
+| Doações e descartes | Quantidade concluída/registrada por destino | Não representa economia atribuível |
+| Resolução de alertas | Alertas atualmente resolvidos / alertas registrados | Não mede precisão dos alertas ou eficácia da IA |
+
 **Comportamento dos filtros:** período e loja afetam vendas, produto e pagamento. Estoque usa a última fotografia e recebe apenas o filtro de loja. Uma seleção de data não altera estoque.
 
 O dashboard inclui uma página **Dados e KPIs** e, na aba **Data**, os datasets `ds_reliability` e `ds_kpi_dictionary`. O dicionário apresenta fórmula, interpretação, fonte e situação de publicação, inclusive para indicadores ainda sem fonte; esses não recebem números fictícios.
@@ -51,7 +64,7 @@ Também foram conferidas contagens no banco operacional: movimento de estoque, t
 ## Próximos dados a instrumentar
 
 1. Confirmar que a carga operacional → analítico continua publicando pagamentos por venda e adicionar testes de reconciliação ao contrato RPA. O fato já existe no analítico, portanto não foi necessário ler o operacional diretamente para o novo KPI.
-2. Alimentar `fact_inventory_movement`, `fact_transfer`, `fact_replenishment` e `fact_loss_destination` com eventos reais, estados e datas. Só então calcular giro, atendimento de reposição, eficácia de transferência e perda.
+2. Alimentar os oito fatos operacionais novos com eventos reais na carga das 02:00 e conferir as validações Silver. Giro, economia atribuível e previsão de perda ainda exigem histórico e método próprio.
 3. Ligar recomendações de IA a ações e resultados observados; definir comparação apropriada antes de reportar valor economizado.
 4. Para análises de cliente, aprovar finalidade e minimização de dados, usar chave pseudonimizada e garantir histórico suficiente. Não copiar email ou telefone para Gold.
 

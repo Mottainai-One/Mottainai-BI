@@ -28,6 +28,11 @@ SELECT sum(available_quantity) AS unidades_disponiveis,
        sum(stock_value) AS valor_estoque
 FROM motta_analytics.gold.inventory_health;
 SELECT * FROM motta_analytics.gold.quality_summary;
+SELECT * FROM motta_analytics.gold.inventory_count_accuracy;
+SELECT * FROM motta_analytics.gold.transfer_execution;
+SELECT * FROM motta_analytics.gold.replenishment_fulfillment;
+SELECT * FROM motta_analytics.gold.product_destinations;
+SELECT * FROM motta_analytics.gold.alert_action_funnel;
 SELECT * FROM motta_analytics.control.silver_publication;
 SELECT * FROM motta_analytics.control.publication;
 ```

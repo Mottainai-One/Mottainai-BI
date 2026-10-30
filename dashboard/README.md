@@ -9,12 +9,13 @@ O painel publicado usa apenas as views em `motta_analytics.gold`. A definição 
 | Visão executiva | Receita líquida, vendas concluídas, ticket médio, comparação com período anterior, evolução diária, receita por loja, produtos vendidos, frescor | `sales_daily`, `sales_tickets`, `product_sales_daily`, `dashboard_freshness` |
 | Comercial | Lojas e produtos com vendas, unidades vendidas, métodos usados, receita por produto e pagamentos conciliados | `sales_daily`, `product_sales_daily`, `payment_mix` |
 | Estoque | Produtos com alerta por loja, unidades disponíveis, valor a custo médio, vencimento em 30 dias, situação por produto e lotes | `inventory_health`, `inventory_batches` |
+| Operações e perdas | Acuracidade de posições contadas, divergência, transferências, reposição, doações, descartes e alertas; detalhes de contagem e destinação | `inventory_count_accuracy`, `transfer_execution`, `replenishment_fulfillment`, `product_destinations`, `alert_action_funnel` |
 | Distribuição e qualidade | Histograma e boxplot de tickets, contagens de validação Silver e limites da amostra | `sales_tickets`, `quality_summary` |
 | Dados e KPIs | Fórmula, interpretação, fonte e estado de cada indicador | Dataset `ds_kpi_dictionary` na aba Data |
 
 Os cartões agora trazem uma análise curta na mesma página. A visão executiva destaca também itens por venda, posições de estoque em alerta, validações com falha e idade dos dados. Estoque separa quantidade a vencer, quantidade vencida e lotes sem custo; o valor monetário agregado permanece vazio quando o custo de algum lote estiver ausente. A página de confiabilidade apresenta regras verificadas, regras com falha, achados inválidos e horas desde o corte da origem.
 
-Na **aba Data** do dashboard, `ds_period`, `ds_inventory` e `ds_payment` expõem os dados que alimentam os KPIs comerciais e de estoque. Os novos datasets `ds_reliability` e `ds_kpi_dictionary` mostram, respectivamente, métricas de confiabilidade e o contrato semântico de cada KPI, inclusive os ainda indisponíveis. O dicionário não contém valores simulados.
+Na **aba Data** do dashboard, `ds_period`, `ds_inventory` e `ds_payment` expõem os dados que alimentam os KPIs comerciais e de estoque. `ds_operations`, `ds_counts` e `ds_destinations` expõem os KPIs e detalhes operacionais; `ds_reliability` e `ds_kpi_dictionary` mostram a confiabilidade e o contrato semântico. O dicionário não contém valores simulados. Os novos indicadores permanecem sem valor até que a carga diária publique eventos reais.
 
 Filtros globais: período e loja. O período afeta métricas de vendas; estoque representa o lote mais recente e não deve mudar quando a data da venda muda. A variação percentual de receita fica nula quando o período anterior tem receita zero.
 

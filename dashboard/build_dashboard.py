@@ -88,6 +88,9 @@ datasets = [
     {"name": "ds_quality", "displayName": "Qualidade Silver", "queryLines": [sql_file("10_quality.sql")]},
     {"name": "ds_reliability", "displayName": "KPIs de confiabilidade da publicação", "queryLines": [sql_file("12_kpi_reliability.sql")]},
     {"name": "ds_kpi_dictionary", "displayName": "Dicionário de KPIs e análise", "queryLines": [sql_file("13_kpi_dictionary.sql")]},
+    {"name": "ds_operations", "displayName": "KPIs de operações e perdas", "queryLines": [sql_file("14_operational_kpis.sql")]},
+    {"name": "ds_counts", "displayName": "Conferências físicas", "queryLines": [sql_file("15_inventory_counts.sql")]},
+    {"name": "ds_destinations", "displayName": "Destinações registradas", "queryLines": [sql_file("16_operational_events.sql")]},
 ]
 
 commercial = [
@@ -251,6 +254,28 @@ dictionary = [
     layout(text_widget("dictionary-note", ["**Sem fonte** e **sem eventos** significam que o KPI ainda não deve mostrar número. Métricas condicionais exigem dados suficientes e denominadores válidos. Os filtros comerciais não alteram este dicionário."]), 0, 20, 12, 2),
 ]
 
+operations = [
+    layout(text_widget("operations-header", ["# Operações  |  Resultado observado\n", "\n", "Contagens concluídas, transferências, reposição e destinações da última publicação. Campos vazios indicam que ainda não houve eventos elegíveis."]), 0, 0, 12, 2),
+    layout(counter("count-accuracy", "Acuracidade das posições contadas", "MAX(`inventory_accuracy`)", fmt=PERCENT, dataset="ds_operations"), 0, 2, 3, 3),
+    layout(counter("count-difference", "Divergência absoluta · un.", "MAX(`inventory_difference_units`)", dataset="ds_operations"), 3, 2, 3, 3),
+    layout(counter("transfer-completion", "Transferências concluídas · %", "MAX(`transfer_completion_rate`)", fmt=PERCENT, dataset="ds_operations"), 6, 2, 3, 3),
+    layout(counter("replenishment", "Reposição observada · %", "MAX(`observed_replenishment_rate`)", fmt=PERCENT, dataset="ds_operations"), 9, 2, 3, 3),
+    layout(text_widget("operations-explain", ["**Acuracidade:** posições com quantidade igual / posições concluídas; não mede cobertura de todo o estoque. **Divergência:** soma absoluta em unidades. **Transferências:** concluídas / solicitadas. **Reposição:** quantidade executada / sugerida apenas onde há execução concluída; não representa todas as pré-listas."]), 0, 5, 12, 3),
+    layout(counter("donated-units", "Unidades doadas", "MAX(`donated_units`)", dataset="ds_operations"), 0, 8, 3, 3),
+    layout(counter("disposed-units", "Unidades descartadas", "MAX(`disposed_units`)", dataset="ds_operations"), 3, 8, 3, 3),
+    layout(counter("alert-resolution", "Alertas resolvidos · %", "MAX(`alert_resolution_rate`)", fmt=PERCENT, dataset="ds_operations"), 6, 8, 3, 3),
+    layout(counter("suggested-actions", "Ações sugeridas", "MAX(`suggested_actions`)", dataset="ds_operations"), 9, 8, 3, 3),
+    layout(text_widget("operations-limits", ["**Destinações:** volume registrado, sem afirmar economia ou perda evitada. **Alertas:** estado atual por coorte de geração; a taxa de resolução não mede precisão da IA. Números entram apenas após a RPA publicar o lote no analítico e o job Bronze → Silver → Gold terminar."]), 0, 11, 12, 3),
+    layout(chart("count-table", "ds_counts", "table", 2,
+                 [field("count_date"), field("store_name"), field("counted_positions"), field("matching_positions"), field("accuracy_rate"), field("absolute_quantity_difference"), field("positions_without_cost")],
+                 {"columns": [{"fieldName": "count_date", "displayName": "Data"}, {"fieldName": "store_name", "displayName": "Loja"}, {"fieldName": "counted_positions", "displayName": "Posições"}, {"fieldName": "matching_positions", "displayName": "Sem divergência"}, {"fieldName": "accuracy_rate", "displayName": "Acuracidade", "format": PERCENT}, {"fieldName": "absolute_quantity_difference", "displayName": "Divergência · un."}, {"fieldName": "positions_without_cost", "displayName": "Sem custo"}]},
+                 "Contagem física por loja", aggregated=False), 0, 14, 12, 6),
+    layout(chart("destinations-table", "ds_destinations", "table", 2,
+                 [field("event_date"), field("store_name"), field("product_name"), field("destination_type"), field("status"), field("quantity"), field("value_at_cost")],
+                 {"columns": [{"fieldName": "event_date", "displayName": "Data"}, {"fieldName": "store_name", "displayName": "Loja"}, {"fieldName": "product_name", "displayName": "Produto"}, {"fieldName": "destination_type", "displayName": "Destino"}, {"fieldName": "status", "displayName": "Estado"}, {"fieldName": "quantity", "displayName": "Quantidade"}, {"fieldName": "value_at_cost", "displayName": "Valor a custo", "format": BRL}]},
+                 "Doações e descartes registrados", aggregated=False), 0, 20, 12, 6),
+]
+
 filters = [
     layout(filter_widget("filter-period", "filter-date-range-picker", "Período das vendas",
                          [("ds_period", "period", True), ("ds_sales", "sale_date", False),
@@ -269,6 +294,8 @@ dashboard = {
         {"name": "commercial", "displayName": "Comercial", "layout": commercial,
          "pageType": "PAGE_TYPE_CANVAS", "layoutVersion": "GRID_V1"},
         {"name": "stock", "displayName": "Estoque", "layout": stock,
+         "pageType": "PAGE_TYPE_CANVAS", "layoutVersion": "GRID_V1"},
+        {"name": "operations", "displayName": "Operações e perdas", "layout": operations,
          "pageType": "PAGE_TYPE_CANVAS", "layoutVersion": "GRID_V1"},
         {"name": "distribution", "displayName": "Distribuição e qualidade", "layout": distribution,
          "pageType": "PAGE_TYPE_CANVAS", "layoutVersion": "GRID_V1"},

@@ -93,7 +93,28 @@
       "name": "ds_kpi_dictionary",
       "displayName": "Dicionário de KPIs e análise",
       "queryLines": [
-        "SELECT module, kpi, definition, analysis, source_dataset, status\nFROM VALUES\n  ('Comercial', 'Receita líquida', 'Soma de net_amount das vendas concluídas', 'Valor realizado; comparar apenas períodos equivalentes', 'ds_period', 'Publicado'),\n  ('Comercial', 'Vendas concluídas', 'Contagem de transações COMPLETED', 'Volume de compras; não representa clientes distintos', 'ds_period', 'Publicado'),\n  ('Comercial', 'Ticket médio', 'Receita líquida / vendas concluídas', 'Valor por compra; nulo sem vendas', 'ds_period', 'Publicado'),\n  ('Comercial', 'Itens por venda', 'Itens vendidos / vendas concluídas', 'Tamanho médio da cesta; não confundir com unidades', 'ds_period', 'Publicado'),\n  ('Comercial', 'Variação de receita', '(Receita atual - anterior) / anterior', 'Requer período anterior com receita e mesma duração', 'ds_period', 'Condicional'),\n  ('Comercial', 'Lojas e produtos com vendas', 'Contagens distintas no recorte', 'Cobertura observada; não é taxa de conversão', 'ds_sales / ds_product', 'Publicado'),\n  ('Comercial', 'Receita por produto', 'Soma do subtotal dos itens conciliados', 'Mostra concentração comercial; não é margem', 'ds_product', 'Publicado'),\n  ('Comercial', 'Valor por método', 'Soma dos pagamentos conciliados por venda', 'Uma venda pode usar vários métodos; não somar vendas por método', 'ds_payment', 'Publicado'),\n  ('Estoque', 'Unidades disponíveis', 'Quantidade em mãos - reservada', 'Fotografia mais recente por produto e loja', 'ds_inventory', 'Publicado'),\n  ('Estoque', 'Produtos com alerta', 'Produto/loja vencido, a vencer ou abaixo do mínimo', 'Contagem de posições que requerem verificação operacional', 'ds_inventory', 'Publicado'),\n  ('Estoque', 'Unidades a vencer em 30 dias', 'Soma da quantidade dos lotes com validade próxima', 'Exposição física; não é previsão de perda', 'ds_inventory', 'Publicado'),\n  ('Estoque', 'Valor a vencer em 30 dias', 'Quantidade do lote x custo médio conhecido', 'Exposição a custo; fica indisponível quando faltar custo', 'ds_inventory', 'Condicional'),\n  ('Estoque', 'Valor do estoque', 'Quantidade em mãos x custo médio conhecido', 'Valor contábil aproximado; não é receita nem margem', 'ds_inventory', 'Condicional'),\n  ('Confiabilidade', 'Idade dos dados', 'Horas entre o corte da origem e agora', 'Mostra o atraso da fotografia; não mede acuracidade física', 'ds_reliability', 'Publicado'),\n  ('Confiabilidade', 'Validações com falha', 'Regras Silver com invalid_rows maior que zero', 'Zero indica regras aprovadas, não inventário físico correto', 'ds_reliability', 'Publicado'),\n  ('Confiabilidade', 'Achados inválidos', 'Soma de invalid_rows nas regras Silver', 'Achados de validação; uma linha pode aparecer em mais de uma regra', 'ds_reliability', 'Publicado'),\n  ('Evolutivo', 'Acuracidade de inventário', 'Posições conferidas sem divergência / posições conferidas', 'Exige contagem física e cobertura definida', 'Inventário físico', 'Sem fonte'),\n  ('Evolutivo', 'Giro e cobertura de estoque', 'Saídas e estoque médio por SKU/loja em janela suficiente', 'Exige histórico e movimentos válidos', 'Movimentos / snapshots', 'Sem histórico'),\n  ('Evolutivo', 'Perda, recuperação e economia atribuível', 'Resultado confirmado, custo histórico e referência causal', 'Valor em risco não equivale a economia realizada', 'Perdas / ações', 'Sem eventos'),\n  ('Evolutivo', 'Efetividade dos alertas de IA', 'Alertas avaliados contra resultados observados', 'Exige previsão original, ação e desfecho', 'IA / ações', 'Sem eventos')\nAS dictionary(module, kpi, definition, analysis, source_dataset, status)"
+        "SELECT module, kpi, definition, analysis, source_dataset, status\nFROM VALUES\n  ('Comercial', 'Receita líquida', 'Soma de net_amount das vendas concluídas', 'Valor realizado; comparar apenas períodos equivalentes', 'ds_period', 'Publicado'),\n  ('Comercial', 'Vendas concluídas', 'Contagem de transações COMPLETED', 'Volume de compras; não representa clientes distintos', 'ds_period', 'Publicado'),\n  ('Comercial', 'Ticket médio', 'Receita líquida / vendas concluídas', 'Valor por compra; nulo sem vendas', 'ds_period', 'Publicado'),\n  ('Comercial', 'Itens por venda', 'Itens vendidos / vendas concluídas', 'Tamanho médio da cesta; não confundir com unidades', 'ds_period', 'Publicado'),\n  ('Comercial', 'Variação de receita', '(Receita atual - anterior) / anterior', 'Requer período anterior com receita e mesma duração', 'ds_period', 'Condicional'),\n  ('Comercial', 'Lojas e produtos com vendas', 'Contagens distintas no recorte', 'Cobertura observada; não é taxa de conversão', 'ds_sales / ds_product', 'Publicado'),\n  ('Comercial', 'Receita por produto', 'Soma do subtotal dos itens conciliados', 'Mostra concentração comercial; não é margem', 'ds_product', 'Publicado'),\n  ('Comercial', 'Valor por método', 'Soma dos pagamentos conciliados por venda', 'Uma venda pode usar vários métodos; não somar vendas por método', 'ds_payment', 'Publicado'),\n  ('Estoque', 'Unidades disponíveis', 'Quantidade em mãos - reservada', 'Fotografia mais recente por produto e loja', 'ds_inventory', 'Publicado'),\n  ('Estoque', 'Produtos com alerta', 'Produto/loja vencido, a vencer ou abaixo do mínimo', 'Contagem de posições que requerem verificação operacional', 'ds_inventory', 'Publicado'),\n  ('Estoque', 'Unidades a vencer em 30 dias', 'Soma da quantidade dos lotes com validade próxima', 'Exposição física; não é previsão de perda', 'ds_inventory', 'Publicado'),\n  ('Estoque', 'Valor a vencer em 30 dias', 'Quantidade do lote x custo médio conhecido', 'Exposição a custo; fica indisponível quando faltar custo', 'ds_inventory', 'Condicional'),\n  ('Estoque', 'Valor do estoque', 'Quantidade em mãos x custo médio conhecido', 'Valor contábil aproximado; não é receita nem margem', 'ds_inventory', 'Condicional'),\n  ('Confiabilidade', 'Idade dos dados', 'Horas entre o corte da origem e agora', 'Mostra o atraso da fotografia; não mede acuracidade física', 'ds_reliability', 'Publicado'),\n  ('Confiabilidade', 'Validações com falha', 'Regras Silver com invalid_rows maior que zero', 'Zero indica regras aprovadas, não inventário físico correto', 'ds_reliability', 'Publicado'),\n  ('Confiabilidade', 'Achados inválidos', 'Soma de invalid_rows nas regras Silver', 'Achados de validação; uma linha pode aparecer em mais de uma regra', 'ds_reliability', 'Publicado'),\n  ('Operações', 'Acuracidade das posições contadas', 'Posições COMPLETED iguais / posições COMPLETED', 'Apenas posições conferidas; não mede cobertura de todo o estoque', 'ds_operations / ds_counts', 'Condicional a eventos'),\n  ('Operações', 'Divergência absoluta em unidades', 'Soma de abs(contado - sistema) em contagens concluídas', 'Volume de divergência, sem compensar faltas com sobras', 'ds_operations / ds_counts', 'Condicional a eventos'),\n  ('Operações', 'Conclusão de transferências', 'Transferências concluídas / transferências com itens', 'Mede execução, não venda no destino nem perda evitada', 'ds_operations', 'Condicional a eventos'),\n  ('Operações', 'Atendimento observado de reposição', 'Quantidade executada / sugerida nas pré-listas com execução concluída', 'Não generalizar a todas as pré-listas; ver cobertura separadamente', 'ds_operations', 'Condicional a eventos'),\n  ('Sustentabilidade', 'Unidades doadas e descartadas', 'Soma das linhas de doação concluída e descarte registrado', 'Destinação física, sem inferir impacto ambiental monetário', 'ds_operations / ds_destinations', 'Condicional a eventos'),\n  ('Inteligência', 'Resolução de alertas', 'Alertas atualmente resolvidos / alertas registrados', 'Estado atual por coorte; não mede precisão da IA', 'ds_operations', 'Condicional a eventos'),\n  ('Inteligência', 'Ações sugeridas', 'Contagem de ações ligadas a alertas', 'Volume de sugestões, sem inferir execução ou benefício', 'ds_operations', 'Condicional a eventos'),\n  ('Evolutivo', 'Giro e cobertura de estoque', 'Saídas e estoque médio por SKU/loja em janela suficiente', 'Exige histórico e movimentos válidos', 'Movimentos / snapshots', 'Sem histórico'),\n  ('Evolutivo', 'Perda, recuperação e economia atribuível', 'Resultado confirmado, custo histórico e referência causal', 'Valor em risco não equivale a economia realizada', 'Perdas / ações', 'Sem eventos'),\n  ('Evolutivo', 'Efetividade dos alertas de IA', 'Alertas avaliados contra resultados observados', 'Exige previsão original, ação e desfecho', 'IA / ações', 'Sem eventos')\nAS dictionary(module, kpi, definition, analysis, source_dataset, status)"
+      ]
+    },
+    {
+      "name": "ds_operations",
+      "displayName": "KPIs de operações e perdas",
+      "queryLines": [
+        "SELECT\n  (SELECT TRY_DIVIDE(SUM(matching_positions), SUM(counted_positions))\n   FROM motta_analytics.gold.inventory_count_accuracy) AS inventory_accuracy,\n  (SELECT CASE WHEN COUNT(*)=0 THEN NULL ELSE SUM(absolute_quantity_difference) END\n   FROM motta_analytics.gold.inventory_count_accuracy) AS inventory_difference_units,\n  (SELECT TRY_DIVIDE(SUM(completed_transfers), SUM(transfers_with_items))\n   FROM motta_analytics.gold.transfer_execution) AS transfer_completion_rate,\n  (SELECT CASE WHEN COUNT(*)=0 THEN NULL ELSE SUM(completed_transfers) END\n   FROM motta_analytics.gold.transfer_execution) AS completed_transfers,\n  (SELECT TRY_DIVIDE(SUM(completed_quantity), SUM(suggested_quantity))\n   FROM motta_analytics.gold.replenishment_fulfillment\n   WHERE completed_lines > 0) AS observed_replenishment_rate,\n  (SELECT CASE WHEN COUNT(*)=0 THEN NULL ELSE SUM(quantity) END\n   FROM motta_analytics.gold.product_destinations\n   WHERE destination_type='DOACAO' AND status='COMPLETED') AS donated_units,\n  (SELECT CASE WHEN COUNT(*)=0 THEN NULL ELSE SUM(quantity) END\n   FROM motta_analytics.gold.product_destinations\n   WHERE destination_type='DESCARTE') AS disposed_units,\n  (SELECT TRY_DIVIDE(SUM(resolved_alerts), SUM(alerts))\n   FROM motta_analytics.gold.alert_action_funnel) AS alert_resolution_rate,\n  (SELECT CASE WHEN COUNT(*)=0 THEN NULL ELSE SUM(suggested_actions) END\n   FROM motta_analytics.gold.alert_action_funnel) AS suggested_actions"
+      ]
+    },
+    {
+      "name": "ds_counts",
+      "displayName": "Conferências físicas",
+      "queryLines": [
+        "SELECT count_date,store_id,store_name,counted_positions,matching_positions,\n       accuracy_rate,absolute_quantity_difference,absolute_difference_value,\n       positions_without_cost\nFROM motta_analytics.gold.inventory_count_accuracy"
+      ]
+    },
+    {
+      "name": "ds_destinations",
+      "displayName": "Destinações registradas",
+      "queryLines": [
+        "SELECT event_date,store_id,store_name,product_name,destination_type,status,\n       quantity,value_at_cost\nFROM motta_analytics.gold.product_destinations"
       ]
     }
   ],
@@ -1953,6 +1974,607 @@
           "position": {
             "x": 0,
             "y": 23,
+            "width": 12,
+            "height": 6
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "operations",
+      "displayName": "Operações e perdas",
+      "layout": [
+        {
+          "widget": {
+            "name": "operations-header",
+            "multilineTextboxSpec": {
+              "lines": [
+                "# Operações  |  Resultado observado\n",
+                "\n",
+                "Contagens concluídas, transferências, reposição e destinações da última publicação. Campos vazios indicam que ainda não houve eventos elegíveis."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "count-accuracy",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_operations",
+                  "fields": [
+                    {
+                      "name": "value",
+                      "expression": "MAX(`inventory_accuracy`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "value",
+                  "displayName": "Acuracidade das posições contadas",
+                  "format": {
+                    "type": "number-percent",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 1
+                    }
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Acuracidade das posições contadas"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "count-difference",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_operations",
+                  "fields": [
+                    {
+                      "name": "value",
+                      "expression": "MAX(`inventory_difference_units`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "value",
+                  "displayName": "Divergência absoluta · un."
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Divergência absoluta · un."
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 2,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "transfer-completion",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_operations",
+                  "fields": [
+                    {
+                      "name": "value",
+                      "expression": "MAX(`transfer_completion_rate`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "value",
+                  "displayName": "Transferências concluídas · %",
+                  "format": {
+                    "type": "number-percent",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 1
+                    }
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Transferências concluídas · %"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 2,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "replenishment",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_operations",
+                  "fields": [
+                    {
+                      "name": "value",
+                      "expression": "MAX(`observed_replenishment_rate`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "value",
+                  "displayName": "Reposição observada · %",
+                  "format": {
+                    "type": "number-percent",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 1
+                    }
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Reposição observada · %"
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 2,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "operations-explain",
+            "multilineTextboxSpec": {
+              "lines": [
+                "**Acuracidade:** posições com quantidade igual / posições concluídas; não mede cobertura de todo o estoque. **Divergência:** soma absoluta em unidades. **Transferências:** concluídas / solicitadas. **Reposição:** quantidade executada / sugerida apenas onde há execução concluída; não representa todas as pré-listas."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 12,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "donated-units",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_operations",
+                  "fields": [
+                    {
+                      "name": "value",
+                      "expression": "MAX(`donated_units`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "value",
+                  "displayName": "Unidades doadas"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Unidades doadas"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 8,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "disposed-units",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_operations",
+                  "fields": [
+                    {
+                      "name": "value",
+                      "expression": "MAX(`disposed_units`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "value",
+                  "displayName": "Unidades descartadas"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Unidades descartadas"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 8,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "alert-resolution",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_operations",
+                  "fields": [
+                    {
+                      "name": "value",
+                      "expression": "MAX(`alert_resolution_rate`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "value",
+                  "displayName": "Alertas resolvidos · %",
+                  "format": {
+                    "type": "number-percent",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 1
+                    }
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Alertas resolvidos · %"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 8,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "suggested-actions",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_operations",
+                  "fields": [
+                    {
+                      "name": "value",
+                      "expression": "MAX(`suggested_actions`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "value",
+                  "displayName": "Ações sugeridas"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Ações sugeridas"
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 8,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "operations-limits",
+            "multilineTextboxSpec": {
+              "lines": [
+                "**Destinações:** volume registrado, sem afirmar economia ou perda evitada. **Alertas:** estado atual por coorte de geração; a taxa de resolução não mede precisão da IA. Números entram apenas após a RPA publicar o lote no analítico e o job Bronze → Silver → Gold terminar."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 11,
+            "width": 12,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "count-table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_counts",
+                  "fields": [
+                    {
+                      "name": "count_date",
+                      "expression": "`count_date`"
+                    },
+                    {
+                      "name": "store_name",
+                      "expression": "`store_name`"
+                    },
+                    {
+                      "name": "counted_positions",
+                      "expression": "`counted_positions`"
+                    },
+                    {
+                      "name": "matching_positions",
+                      "expression": "`matching_positions`"
+                    },
+                    {
+                      "name": "accuracy_rate",
+                      "expression": "`accuracy_rate`"
+                    },
+                    {
+                      "name": "absolute_quantity_difference",
+                      "expression": "`absolute_quantity_difference`"
+                    },
+                    {
+                      "name": "positions_without_cost",
+                      "expression": "`positions_without_cost`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "count_date",
+                    "displayName": "Data"
+                  },
+                  {
+                    "fieldName": "store_name",
+                    "displayName": "Loja"
+                  },
+                  {
+                    "fieldName": "counted_positions",
+                    "displayName": "Posições"
+                  },
+                  {
+                    "fieldName": "matching_positions",
+                    "displayName": "Sem divergência"
+                  },
+                  {
+                    "fieldName": "accuracy_rate",
+                    "displayName": "Acuracidade",
+                    "format": {
+                      "type": "number-percent",
+                      "decimalPlaces": {
+                        "type": "max",
+                        "places": 1
+                      }
+                    }
+                  },
+                  {
+                    "fieldName": "absolute_quantity_difference",
+                    "displayName": "Divergência · un."
+                  },
+                  {
+                    "fieldName": "positions_without_cost",
+                    "displayName": "Sem custo"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Contagem física por loja"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 14,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "destinations-table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_destinations",
+                  "fields": [
+                    {
+                      "name": "event_date",
+                      "expression": "`event_date`"
+                    },
+                    {
+                      "name": "store_name",
+                      "expression": "`store_name`"
+                    },
+                    {
+                      "name": "product_name",
+                      "expression": "`product_name`"
+                    },
+                    {
+                      "name": "destination_type",
+                      "expression": "`destination_type`"
+                    },
+                    {
+                      "name": "status",
+                      "expression": "`status`"
+                    },
+                    {
+                      "name": "quantity",
+                      "expression": "`quantity`"
+                    },
+                    {
+                      "name": "value_at_cost",
+                      "expression": "`value_at_cost`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "event_date",
+                    "displayName": "Data"
+                  },
+                  {
+                    "fieldName": "store_name",
+                    "displayName": "Loja"
+                  },
+                  {
+                    "fieldName": "product_name",
+                    "displayName": "Produto"
+                  },
+                  {
+                    "fieldName": "destination_type",
+                    "displayName": "Destino"
+                  },
+                  {
+                    "fieldName": "status",
+                    "displayName": "Estado"
+                  },
+                  {
+                    "fieldName": "quantity",
+                    "displayName": "Quantidade"
+                  },
+                  {
+                    "fieldName": "value_at_cost",
+                    "displayName": "Valor a custo",
+                    "format": {
+                      "type": "number-currency",
+                      "currencyCode": "BRL",
+                      "decimalPlaces": {
+                        "type": "max",
+                        "places": 2
+                      }
+                    }
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Doações e descartes registrados"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 20,
             "width": 12,
             "height": 6
           }

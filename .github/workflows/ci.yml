@@ -25,8 +25,9 @@ jobs:
 
           dashboard = json.loads(Path('dashboard/mottainai_bi.lvdash.json').read_text(encoding='utf-8'))
           datasets = {item['name'] for item in dashboard['datasets']}
-          assert len(datasets) == 11
-          assert {'ds_reliability', 'ds_kpi_dictionary'} <= datasets
+          assert len(datasets) == 14
+          assert {'ds_reliability', 'ds_kpi_dictionary', 'ds_operations',
+                  'ds_counts', 'ds_destinations'} <= datasets
           for item in dashboard['datasets']:
               sql = ' '.join(item['queryLines']).lower()
               if item['name'] != 'ds_kpi_dictionary':
@@ -37,7 +38,7 @@ jobs:
               assert 'mottainai_operacional' not in sql
           canvas = [page for page in dashboard['pages'] if page['pageType'] == 'PAGE_TYPE_CANVAS']
           filters = [page for page in dashboard['pages'] if page['pageType'] == 'PAGE_TYPE_GLOBAL_FILTERS']
-          assert len(canvas) == 5 and len(filters) == 1
+          assert len(canvas) == 6 and len(filters) == 1
           assert 'dictionary' in {page['name'] for page in canvas}
           widgets = [part['widget'] for page in dashboard['pages'] for part in page['layout']]
           for page in canvas:
