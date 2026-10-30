@@ -14,11 +14,13 @@ As três camadas ficam em `motta_analytics.bronze`, `motta_analytics.silver` e `
 
 ## Entregáveis
 
-- [Dashboard publicado](https://dbc-38ac8920-cbf4.cloud.databricks.com/sql/dashboardsv3/01f1d22904b81b738aef457d6a67f354/published?o=7474654317437663)
+- [PR #5 da revisão de indicadores](https://github.com/Mottainai-One/Mottainai-BI/pull/5), continuação da PR #3 mesclada.
+- [Dashboard publicado](https://dbc-38ac8920-cbf4.cloud.databricks.com/sql/dashboardsv3/01f1d22904b81b738aef457d6a67f354?o=7474654317437663)
 - [Job Databricks](https://dbc-38ac8920-cbf4.cloud.databricks.com/jobs/731348243647869?o=7474654317437663)
-- [Execução validada, cinco tarefas](https://dbc-38ac8920-cbf4.cloud.databricks.com/jobs/731348243647869/runs/97850894011189?o=7474654317437663)
-- [Relatório gerencial](docs/RELATORIO_GERENCIAL.md), [matriz de evidências](docs/ENTREGA_BI.md), [especificação do painel](dashboard/README.md) e [runbook](docs/RUNBOOK.md).
+- [Execução validada, cinco tarefas](https://dbc-38ac8920-cbf4.cloud.databricks.com/jobs/731348243647869/runs/906604160409285?o=7474654317437663)
+- [Atualização da versão publicada](https://dbc-38ac8920-cbf4.cloud.databricks.com/jobs/731348243647869/runs/608262702654119?o=7474654317437663)
+- [Catálogo de indicadores](docs/KPI_CATALOG.md), [relatório gerencial](docs/RELATORIO_GERENCIAL.md), [matriz de evidências](docs/ENTREGA_BI.md), [especificação do painel](dashboard/README.md) e [runbook](docs/RUNBOOK.md).
 
-O dashboard apresenta três páginas: visão executiva, estoque e distribuição/qualidade. Há filtros globais de período e loja. A amostra atual contém somente um dia de vendas e uma loja vendedora; comparação temporal e dispersão devem ser interpretadas como testes de visualização até que exista histórico suficiente. O mapa permanece condicional porque a origem não possui coordenadas.
+O dashboard apresenta quatro páginas: visão executiva, comercial, estoque e distribuição/qualidade. Há filtros globais de período e loja. A amostra atual contém somente um dia de vendas e uma loja vendedora; comparação temporal e dispersão devem ser interpretadas como testes de visualização até que exista histórico suficiente. O mapa permanece condicional porque a origem não possui coordenadas.
 
 A [PR RPA #11](https://github.com/Mottainai-One/Mottanai-RPA/pull/11) contém a correção de publicação diária e ainda depende do fluxo de revisão/merge da equipe. Uma carga concluída fora da janela diária exige executar o job Databricks manualmente após confirmar o novo lote.

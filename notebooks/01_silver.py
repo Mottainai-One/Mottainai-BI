@@ -7,7 +7,7 @@ import uuid
 from pyspark.sql import functions as F
 
 
-MODEL_VERSION = "2"
+MODEL_VERSION = "6"
 
 
 def identifier(value):
@@ -104,6 +104,13 @@ frames = {
         "cast(discount_amount as decimal(20,2)) discount_amount",
         "cast(subtotal as decimal(20,2)) subtotal",
     ),
+    "fact_sale_payment": staged("fact_sale_payment").selectExpr(
+        "_batch_id", "cast(payment_id as long) payment_id",
+        "cast(sale_id as long) sale_id", "cast(sale_date as date) sale_date",
+        "cast(store_id as long) store_id", "upper(trim(payment_method)) payment_method",
+        "cast(amount as decimal(20,2)) amount",
+        "cast(installments as int) installments",
+    ),
     "fact_inventory_snapshot": staged("fact_inventory_snapshot").selectExpr(
         "_batch_id", "cast(inventory_id as long) inventory_id",
         "cast(snapshot_date as date) snapshot_date",
@@ -115,6 +122,63 @@ frames = {
         "cast(average_cost as decimal(20,4)) average_cost",
         "cast(expiration_date as date) expiration_date",
         "cast(minimum_quantity as decimal(20,3)) minimum_quantity",
+    ),
+    "fact_inventory_count_line": staged("fact_inventory_count_line").selectExpr(
+        "_batch_id", "cast(inventory_count_item_id as long) inventory_count_item_id",
+        "cast(count_date as date) count_date", "cast(store_id as long) store_id",
+        "cast(product_id as long) product_id", "upper(trim(status)) status",
+        "cast(system_quantity as decimal(20,3)) system_quantity",
+        "cast(counted_quantity as decimal(20,3)) counted_quantity",
+        "cast(unit_cost as decimal(20,4)) unit_cost",
+    ),
+    "fact_transfer_line": staged("fact_transfer_line").selectExpr(
+        "_batch_id", "cast(transfer_item_id as long) transfer_item_id",
+        "cast(transfer_id as long) transfer_id", "cast(request_date as date) request_date",
+        "cast(source_store_id as long) source_store_id",
+        "cast(destination_store_id as long) destination_store_id",
+        "cast(product_id as long) product_id", "upper(trim(status)) status",
+        "cast(transferred_quantity as decimal(20,3)) transferred_quantity",
+        "cast(requested_at as timestamp) requested_at",
+        "cast(completed_at as timestamp) completed_at",
+    ),
+    "fact_replenishment_plan_line": staged("fact_replenishment_plan_line").selectExpr(
+        "_batch_id", "cast(pre_list_item_id as long) pre_list_item_id",
+        "cast(pre_list_id as long) pre_list_id", "cast(store_id as long) store_id",
+        "cast(product_id as long) product_id", "cast(generated_at as timestamp) generated_at",
+        "upper(trim(status)) status",
+        "cast(suggested_quantity as decimal(20,3)) suggested_quantity",
+    ),
+    "fact_replenishment_execution_line": staged("fact_replenishment_execution_line").selectExpr(
+        "_batch_id", "cast(execution_item_id as long) execution_item_id",
+        "cast(pre_list_id as long) pre_list_id", "cast(store_id as long) store_id",
+        "cast(product_id as long) product_id", "cast(completed_at as timestamp) completed_at",
+        "cast(replenished_quantity as decimal(20,3)) replenished_quantity",
+    ),
+    "fact_donation_line": staged("fact_donation_line").selectExpr(
+        "_batch_id", "cast(donation_item_id as long) donation_item_id",
+        "cast(donation_date as date) donation_date", "cast(store_id as long) store_id",
+        "cast(product_id as long) product_id", "upper(trim(status)) status",
+        "cast(donated_quantity as decimal(20,3)) donated_quantity",
+        "cast(unit_cost as decimal(20,4)) unit_cost",
+    ),
+    "fact_disposal_line": staged("fact_disposal_line").selectExpr(
+        "_batch_id", "cast(disposal_item_id as long) disposal_item_id",
+        "cast(disposal_date as date) disposal_date", "cast(store_id as long) store_id",
+        "cast(product_id as long) product_id",
+        "cast(disposed_quantity as decimal(20,3)) disposed_quantity",
+        "cast(unit_cost as decimal(20,4)) unit_cost",
+    ),
+    "fact_alert_lifecycle": staged("fact_alert_lifecycle").selectExpr(
+        "_batch_id", "cast(alert_id as long) alert_id", "cast(store_id as long) store_id",
+        "upper(trim(alert_type)) alert_type", "upper(trim(priority)) priority",
+        "upper(trim(status)) status", "cast(generated_at as timestamp) generated_at",
+        "cast(resolved_at as timestamp) resolved_at",
+    ),
+    "fact_action_lifecycle": staged("fact_action_lifecycle").selectExpr(
+        "_batch_id", "cast(suggested_action_id as long) suggested_action_id",
+        "cast(alert_id as long) alert_id", "cast(store_id as long) store_id",
+        "upper(trim(action_type)) action_type", "upper(trim(status)) status",
+        "cast(generated_at as timestamp) generated_at",
     ),
 }
 
@@ -146,6 +210,13 @@ invalid = {
         | (F.col("quantity") <= 0) | (F.col("unit_price") < 0)
         | (F.col("discount_amount") < 0) | (F.col("subtotal") < 0)
     ),
+    "fact_sale_payment": lambda f: (
+        F.col("payment_id").isNull() | F.col("sale_id").isNull()
+        | F.col("sale_date").isNull() | F.col("store_id").isNull()
+        | F.col("payment_method").isNull() | (F.length("payment_method") == 0)
+        | F.col("amount").isNull() | (F.col("amount") < 0)
+        | ((F.col("installments").isNotNull()) & (F.col("installments") < 1))
+    ),
     "fact_inventory_snapshot": lambda f: (
         F.col("inventory_id").isNull() | F.col("snapshot_date").isNull()
         | F.col("company_id").isNull() | F.col("store_id").isNull()
@@ -155,11 +226,72 @@ invalid = {
         | (F.col("reserved_quantity") > F.col("quantity"))
         | (F.col("minimum_quantity") < 0) | (F.col("average_cost") < 0)
     ),
+    "fact_inventory_count_line": lambda f: (
+        F.col("inventory_count_item_id").isNull() | F.col("count_date").isNull()
+        | F.col("store_id").isNull() | F.col("product_id").isNull()
+        | F.col("status").isNull() | F.col("system_quantity").isNull()
+        | F.col("counted_quantity").isNull() | (F.col("system_quantity") < 0)
+        | (F.col("counted_quantity") < 0) | (F.col("unit_cost") < 0)
+    ),
+    "fact_transfer_line": lambda f: (
+        F.col("transfer_item_id").isNull() | F.col("transfer_id").isNull()
+        | F.col("request_date").isNull() | F.col("source_store_id").isNull()
+        | F.col("destination_store_id").isNull() | F.col("product_id").isNull()
+        | F.col("status").isNull() | F.col("requested_at").isNull()
+        | F.col("transferred_quantity").isNull()
+        | (F.col("transferred_quantity") <= 0)
+        | (F.col("source_store_id") == F.col("destination_store_id"))
+        | (F.col("completed_at") < F.col("requested_at"))
+    ),
+    "fact_replenishment_plan_line": lambda f: (
+        F.col("pre_list_item_id").isNull() | F.col("pre_list_id").isNull()
+        | F.col("store_id").isNull() | F.col("product_id").isNull()
+        | F.col("generated_at").isNull() | F.col("status").isNull()
+        | F.col("suggested_quantity").isNull() | (F.col("suggested_quantity") <= 0)
+    ),
+    "fact_replenishment_execution_line": lambda f: (
+        F.col("execution_item_id").isNull() | F.col("pre_list_id").isNull()
+        | F.col("store_id").isNull() | F.col("product_id").isNull()
+        | F.col("replenished_quantity").isNull()
+        | (F.col("replenished_quantity") <= 0)
+    ),
+    "fact_donation_line": lambda f: (
+        F.col("donation_item_id").isNull() | F.col("donation_date").isNull()
+        | F.col("store_id").isNull() | F.col("product_id").isNull()
+        | F.col("status").isNull() | F.col("donated_quantity").isNull()
+        | (F.col("donated_quantity") <= 0) | (F.col("unit_cost") < 0)
+    ),
+    "fact_disposal_line": lambda f: (
+        F.col("disposal_item_id").isNull() | F.col("disposal_date").isNull()
+        | F.col("store_id").isNull() | F.col("product_id").isNull()
+        | F.col("disposed_quantity").isNull() | (F.col("disposed_quantity") <= 0)
+        | (F.col("unit_cost") < 0)
+    ),
+    "fact_alert_lifecycle": lambda f: (
+        F.col("alert_id").isNull() | F.col("store_id").isNull()
+        | F.col("alert_type").isNull() | F.col("priority").isNull()
+        | F.col("status").isNull() | F.col("generated_at").isNull()
+        | (F.col("resolved_at") < F.col("generated_at"))
+    ),
+    "fact_action_lifecycle": lambda f: (
+        F.col("suggested_action_id").isNull() | F.col("alert_id").isNull()
+        | F.col("store_id").isNull() | F.col("action_type").isNull()
+        | F.col("status").isNull() | F.col("generated_at").isNull()
+    ),
 }
 keys = {
     "dim_store": ["store_id"], "dim_category": ["category_id"],
     "dim_product": ["product_id"], "fact_sales": ["sale_id", "sale_date"],
-    "fact_sale_item": ["sale_item_id"], "fact_inventory_snapshot": ["inventory_id", "snapshot_date"],
+    "fact_sale_item": ["sale_item_id"], "fact_sale_payment": ["payment_id"],
+    "fact_inventory_snapshot": ["inventory_id", "snapshot_date"],
+    "fact_inventory_count_line": ["inventory_count_item_id"],
+    "fact_transfer_line": ["transfer_item_id"],
+    "fact_replenishment_plan_line": ["pre_list_item_id"],
+    "fact_replenishment_execution_line": ["execution_item_id"],
+    "fact_donation_line": ["donation_item_id"],
+    "fact_disposal_line": ["disposal_item_id"],
+    "fact_alert_lifecycle": ["alert_id"],
+    "fact_action_lifecycle": ["suggested_action_id"],
 }
 
 quality = []
@@ -176,8 +308,16 @@ relationships = {
     "sales_without_store": frames["fact_sales"].select("store_id").join(store_ids, "store_id", "left_anti").count(),
     "items_without_sale": frames["fact_sale_item"].join(sale_ids, ["sale_id", "sale_date", "store_id"], "left_anti").count(),
     "items_without_product": frames["fact_sale_item"].select("product_id").join(product_ids, "product_id", "left_anti").count(),
+    "payments_without_sale": frames["fact_sale_payment"].join(sale_ids, ["sale_id", "sale_date", "store_id"], "left_anti").count(),
     "inventory_without_store": frames["fact_inventory_snapshot"].select("store_id").join(store_ids, "store_id", "left_anti").count(),
     "inventory_without_product": frames["fact_inventory_snapshot"].select("product_id").join(product_ids, "product_id", "left_anti").count(),
+    "counts_without_product": frames["fact_inventory_count_line"].select("product_id").join(product_ids, "product_id", "left_anti").count(),
+    "transfers_without_product": frames["fact_transfer_line"].select("product_id").join(product_ids, "product_id", "left_anti").count(),
+    "donations_without_product": frames["fact_donation_line"].select("product_id").join(product_ids, "product_id", "left_anti").count(),
+    "disposals_without_product": frames["fact_disposal_line"].select("product_id").join(product_ids, "product_id", "left_anti").count(),
+    "actions_without_alert": frames["fact_action_lifecycle"].select("alert_id").join(
+        frames["fact_alert_lifecycle"].select("alert_id").distinct(), "alert_id", "left_anti"
+    ).count(),
 }
 quality.extend((batch, MODEL_VERSION, name, 0, count) for name, count in relationships.items())
 

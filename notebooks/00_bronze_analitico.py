@@ -96,10 +96,6 @@ previous = spark.sql(
 ).collect()
 if len(previous) > 1:
     raise RuntimeError("Controle Bronze contém publicações duplicadas")
-if previous and previous[0]["batch_id"] == batch:
-    print(f"Lote {batch} já está na Bronze")
-    dbutils.notebook.exit("NO_NEW_BATCH")
-
 # Bronze preserva os fatos e dimensões analíticas no grão de origem. Views de
 # negócio são retidas para reconciliação, nunca servidas diretamente pelo Gold.
 relations = (
@@ -109,7 +105,16 @@ relations = (
     "dim_product",
     "fact_sales",
     "fact_sale_item",
+    "fact_sale_payment",
     "fact_inventory_snapshot",
+    "fact_inventory_count_line",
+    "fact_transfer_line",
+    "fact_replenishment_plan_line",
+    "fact_replenishment_execution_line",
+    "fact_donation_line",
+    "fact_disposal_line",
+    "fact_alert_lifecycle",
+    "fact_action_lifecycle",
     "vw_sales_daily_kpis",
     "mv_dashboard_metrics",
     "vw_monthly_summary",
@@ -118,6 +123,15 @@ relations = (
     "vw_product_risk_ranking",
     "vw_executive_dashboard",
 )
+
+# Um modelo novo pode precisar de uma relação ausente mesmo sem lote novo.
+# Reprocessar nesse caso permite promover a mesma fotografia sem esperar 02:00.
+if previous and previous[0]["batch_id"] == batch and all(
+    spark.catalog.tableExists(f"{catalog}.bronze.{relation}")
+    for relation in relations
+):
+    print(f"Lote {batch} já está completo na Bronze")
+    dbutils.notebook.exit("NO_NEW_BATCH")
 
 # Confere todas as origens antes de gravar qualquer tabela Bronze.
 frames = {}

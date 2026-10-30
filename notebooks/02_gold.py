@@ -5,7 +5,7 @@ import re
 import uuid
 
 
-MODEL_VERSION = "2"
+MODEL_VERSION = "6"
 
 
 def identifier(value):
@@ -99,6 +99,23 @@ WHERE i._batch_id={literal(batch)} AND s.status='COMPLETED'
 if abs(sales - items) > 0.01:
     raise RuntimeError(f"Sales and item revenue do not reconcile: {sales} vs {items}")
 
+# Pagamentos podem ser divididos entre métodos; a conciliação é por venda.
+unreconciled = spark.sql(f"""
+SELECT count(*) AS n
+FROM {silver}.`fact_sales` s
+LEFT JOIN (
+  SELECT sale_id,sale_date,store_id,_batch_id,sum(amount) AS paid
+  FROM {silver}.`fact_sale_payment`
+  WHERE _batch_id={literal(batch)}
+  GROUP BY sale_id,sale_date,store_id,_batch_id
+) p ON p.sale_id=s.sale_id AND p.sale_date=s.sale_date
+   AND p.store_id=s.store_id AND p._batch_id=s._batch_id
+WHERE s._batch_id={literal(batch)} AND s.status='COMPLETED'
+  AND abs(s.net_amount-coalesce(p.paid,0)) > 0.01
+""").first()["n"]
+if unreconciled:
+    raise RuntimeError(f"Completed sales with unreconciled payments: {unreconciled}")
+
 # Gold views are computed from Silver facts and dimensions, with no direct
 # dependency on PostgreSQL business views. The publication pointer is their
 # only batch selector, so every widget sees the same coherent snapshot.
@@ -143,6 +160,21 @@ views = {
         GROUP BY i.sale_date,i.store_id,st.store_name,i.product_id,pr.product_name,
                  pr.category_id,c.category_name,i._batch_id
     """,
+    "payment_mix": f"""
+        SELECT py.sale_date,py.store_id,st.store_name,py.payment_method,
+               count(*) AS payment_count,count(DISTINCT py.sale_id) AS sales_with_method,
+               sum(py.amount) AS paid_amount,py._batch_id
+        FROM {silver}.`fact_sale_payment` py
+        JOIN {silver}.`fact_sales` s ON s.sale_id=py.sale_id
+         AND s.sale_date=py.sale_date AND s.store_id=py.store_id
+         AND s._batch_id=py._batch_id
+        JOIN {silver}.`dim_store` st ON st.store_id=py.store_id
+         AND st._batch_id=py._batch_id
+        JOIN {publication} p ON p.batch_id=py._batch_id
+         AND p.pipeline='operational_to_analytics_daily'
+        WHERE s.status='COMPLETED'
+        GROUP BY py.sale_date,py.store_id,st.store_name,py.payment_method,py._batch_id
+    """,
     "inventory_batches": f"""
         WITH latest AS (
           SELECT store_id,product_id,max(snapshot_date) snapshot_date
@@ -169,12 +201,32 @@ views = {
         SELECT snapshot_date,company_id,store_id,store_name,product_id,product_name,
                sum(quantity) on_hand_quantity,sum(reserved_quantity) reserved_quantity,
                sum(available_quantity) available_quantity,
-               sum(stock_value) stock_value,max(minimum_quantity) minimum_quantity,
+               CASE WHEN count_if(stock_value IS NULL)>0 THEN NULL
+                    ELSE sum(stock_value) END stock_value,
+               count_if(stock_value IS NULL) cost_missing_lot_count,
+               max(minimum_quantity) minimum_quantity,
+               min(days_to_expiry) nearest_expiry_days,
                sum(CASE WHEN days_to_expiry BETWEEN 0 AND 30
-                        THEN stock_value ELSE 0 END) value_expiring_30d,
-               sum(CASE WHEN days_to_expiry < 0 THEN stock_value ELSE 0 END) expired_value,
+                        THEN quantity ELSE 0 END) quantity_expiring_30d,
+               sum(CASE WHEN days_to_expiry < 0 THEN quantity ELSE 0 END) expired_quantity,
+               CASE WHEN count_if(days_to_expiry BETWEEN 0 AND 30
+                                  AND stock_value IS NULL)>0 THEN NULL
+                    ELSE sum(CASE WHEN days_to_expiry BETWEEN 0 AND 30
+                                  THEN stock_value ELSE 0 END) END value_expiring_30d,
+               CASE WHEN count_if(days_to_expiry < 0 AND stock_value IS NULL)>0 THEN NULL
+                    ELSE sum(CASE WHEN days_to_expiry < 0
+                                  THEN stock_value ELSE 0 END) END expired_value,
                CASE WHEN sum(available_quantity) < max(minimum_quantity)
                     THEN true ELSE false END below_minimum,
+               CASE
+                 WHEN sum(CASE WHEN days_to_expiry < 0 THEN quantity ELSE 0 END)>0
+                   THEN 'Vencido'
+                 WHEN sum(CASE WHEN days_to_expiry BETWEEN 0 AND 30 THEN quantity ELSE 0 END)>0
+                   THEN 'Vence em 30 dias'
+                 WHEN sum(available_quantity) < max(minimum_quantity)
+                   THEN 'Abaixo do mínimo'
+                 ELSE 'Sem alerta'
+               END risk_status,
                count(*) batch_count,_batch_id
         FROM {gold}.`inventory_batches`
         GROUP BY snapshot_date,company_id,store_id,store_name,product_id,product_name,_batch_id
@@ -194,6 +246,89 @@ views = {
         FROM {silver}.`quality_results` q JOIN {publication} p
           ON p.batch_id=q.batch_id AND p.model_version=q.model_version
          AND p.pipeline='operational_to_analytics_daily'
+    """,
+    "inventory_count_accuracy": f"""
+        SELECT c.count_date,c.store_id,st.store_name,
+               count(*) counted_positions,
+               count_if(c.counted_quantity=c.system_quantity) matching_positions,
+               try_divide(count_if(c.counted_quantity=c.system_quantity),count(*)) accuracy_rate,
+               sum(abs(c.counted_quantity-c.system_quantity)) absolute_quantity_difference,
+               CASE WHEN count_if(c.unit_cost IS NULL)>0 THEN NULL
+                    ELSE sum(abs(c.counted_quantity-c.system_quantity)*c.unit_cost) END absolute_difference_value,
+               count_if(c.unit_cost IS NULL) positions_without_cost,c._batch_id
+        FROM {silver}.`fact_inventory_count_line` c
+        JOIN {silver}.`dim_store` st ON st.store_id=c.store_id AND st._batch_id=c._batch_id
+        JOIN {publication} p ON p.batch_id=c._batch_id AND p.pipeline='operational_to_analytics_daily'
+        WHERE c.status='COMPLETED'
+        GROUP BY c.count_date,c.store_id,st.store_name,c._batch_id
+    """,
+    "transfer_execution": f"""
+        SELECT t.request_date,t.source_store_id,st.store_name AS source_store_name,
+               t.destination_store_id,count(DISTINCT t.transfer_id) transfers_with_items,
+               count(DISTINCT CASE WHEN t.status='COMPLETED' THEN t.transfer_id END) completed_transfers,
+               sum(t.transferred_quantity) requested_item_quantity,
+               sum(CASE WHEN t.status='COMPLETED' THEN t.transferred_quantity ELSE 0 END) completed_item_quantity,
+               avg(CASE WHEN t.status='COMPLETED' AND t.completed_at IS NOT NULL
+                        THEN timestampdiff(MINUTE,t.requested_at,t.completed_at)/60.0 END) mean_completion_hours,
+               t._batch_id
+        FROM {silver}.`fact_transfer_line` t
+        JOIN {silver}.`dim_store` st ON st.store_id=t.source_store_id AND st._batch_id=t._batch_id
+        JOIN {publication} p ON p.batch_id=t._batch_id AND p.pipeline='operational_to_analytics_daily'
+        GROUP BY t.request_date,t.source_store_id,st.store_name,t.destination_store_id,t._batch_id
+    """,
+    "replenishment_fulfillment": f"""
+        WITH plan AS (
+          SELECT pre_list_id,store_id,product_id,to_date(generated_at) plan_date,
+                 sum(suggested_quantity) suggested_quantity,_batch_id
+          FROM {silver}.`fact_replenishment_plan_line`
+          GROUP BY pre_list_id,store_id,product_id,to_date(generated_at),_batch_id
+        ), execution AS (
+          SELECT pre_list_id,store_id,product_id,_batch_id,
+                 sum(CASE WHEN completed_at IS NOT NULL THEN replenished_quantity ELSE 0 END) completed_quantity,
+                 count_if(completed_at IS NOT NULL) completed_lines
+          FROM {silver}.`fact_replenishment_execution_line`
+          GROUP BY pre_list_id,store_id,product_id,_batch_id
+        )
+        SELECT p.plan_date,p.store_id,st.store_name,p.product_id,pr.product_name,
+               p.suggested_quantity,e.completed_quantity,e.completed_lines,
+               CASE WHEN e.completed_lines>0 THEN try_divide(e.completed_quantity,p.suggested_quantity)
+                    ELSE NULL END fulfillment_rate,p._batch_id
+        FROM plan p LEFT JOIN execution e ON e.pre_list_id=p.pre_list_id
+          AND e.store_id=p.store_id AND e.product_id=p.product_id AND e._batch_id=p._batch_id
+        JOIN {silver}.`dim_store` st ON st.store_id=p.store_id AND st._batch_id=p._batch_id
+        JOIN {silver}.`dim_product` pr ON pr.product_id=p.product_id AND pr._batch_id=p._batch_id
+        JOIN {publication} pub ON pub.batch_id=p._batch_id AND pub.pipeline='operational_to_analytics_daily'
+    """,
+    "product_destinations": f"""
+        SELECT d.donation_date event_date,d.store_id,st.store_name,d.product_id,pr.product_name,
+               'DOACAO' destination_type,d.status,d.donated_quantity quantity,
+               d.donated_quantity*d.unit_cost value_at_cost,d._batch_id
+        FROM {silver}.`fact_donation_line` d
+        JOIN {silver}.`dim_store` st ON st.store_id=d.store_id AND st._batch_id=d._batch_id
+        JOIN {silver}.`dim_product` pr ON pr.product_id=d.product_id AND pr._batch_id=d._batch_id
+        JOIN {publication} p ON p.batch_id=d._batch_id AND p.pipeline='operational_to_analytics_daily'
+        UNION ALL
+        SELECT d.disposal_date,d.store_id,st.store_name,d.product_id,pr.product_name,
+               'DESCARTE','REGISTERED',d.disposed_quantity,
+               d.disposed_quantity*d.unit_cost,d._batch_id
+        FROM {silver}.`fact_disposal_line` d
+        JOIN {silver}.`dim_store` st ON st.store_id=d.store_id AND st._batch_id=d._batch_id
+        JOIN {silver}.`dim_product` pr ON pr.product_id=d.product_id AND pr._batch_id=d._batch_id
+        JOIN {publication} p ON p.batch_id=d._batch_id AND p.pipeline='operational_to_analytics_daily'
+    """,
+    "alert_action_funnel": f"""
+        SELECT to_date(a.generated_at) alert_date,a.store_id,st.store_name,
+               count(DISTINCT a.alert_id) alerts,
+               count(DISTINCT CASE WHEN a.status='RESOLVED' THEN a.alert_id END) resolved_alerts,
+               count(DISTINCT s.suggested_action_id) suggested_actions,
+               count(DISTINCT CASE WHEN s.status='APPROVED' THEN s.suggested_action_id END) approved_actions,
+               count(DISTINCT CASE WHEN s.status='EXECUTED' THEN s.suggested_action_id END) executed_actions,
+               a._batch_id
+        FROM {silver}.`fact_alert_lifecycle` a
+        LEFT JOIN {silver}.`fact_action_lifecycle` s ON s.alert_id=a.alert_id AND s._batch_id=a._batch_id
+        JOIN {silver}.`dim_store` st ON st.store_id=a.store_id AND st._batch_id=a._batch_id
+        JOIN {publication} p ON p.batch_id=a._batch_id AND p.pipeline='operational_to_analytics_daily'
+        GROUP BY to_date(a.generated_at),a.store_id,st.store_name,a._batch_id
     """,
 }
 
