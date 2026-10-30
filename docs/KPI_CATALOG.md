@@ -11,18 +11,24 @@ Este catálogo separa indicadores calculáveis e verificáveis hoje daqueles que
 | Quanto vendemos? | Receita líquida | Soma de `net_amount` em `fact_sales` com `status='COMPLETED'`; concilia com subtotais de itens e pagamentos por venda | Período e loja; BRL. Não inclui vendas canceladas |
 | Quantas compras ocorreram? | Vendas concluídas | Contagem distinta das vendas concluídas | Período e loja; transações |
 | Como evolui o valor por compra? | Ticket médio | Receita líquida ÷ vendas concluídas | BRL por venda; nulo se não há vendas |
+| Qual o tamanho da cesta? | Itens por venda | Soma de `item_count` das vendas concluídas ÷ vendas concluídas | Itens registrados por compra; nulo sem vendas. Diferente de unidades vendidas |
 | Houve crescimento? | Variação da receita | (Receita atual − receita do período anterior de mesma duração) ÷ receita anterior | Fração/percentual; nulo se denominador zero; marcar período parcial |
 | Quais lojas e produtos participam? | Lojas com vendas e produtos vendidos | Contagem distinta de loja e produto com venda concluída | Contagens de cobertura do período, não taxa de conversão; exibir junto ao volume |
 | O que gera receita? | Receita e unidades por produto | Soma de subtotal e quantidade dos itens de vendas concluídas | Produto, loja e dia; BRL e unidades; sem margem confiável |
 | Como o cliente pagou? | Valor por método | Soma dos pagamentos das vendas concluídas, após conciliação por venda com `net_amount` | Método, loja e dia; BRL. Uma venda pode ter mais de um método; não somar `sales_with_method` como vendas únicas |
 | Quanto temos para vender? | Estoque em mãos e disponível | Soma de quantidade; disponível = quantidade − reservada | Última fotografia por loja e produto; unidades |
+| Quantas unidades exigem atenção por validade? | Unidades a vencer e vencidas | Soma das quantidades dos lotes com validade em até 30 dias ou já ultrapassada, na data da fotografia | Unidades; exposição física, não perda prevista |
 | Onde agir no estoque? | Abaixo do mínimo, vencido, vence em 30 dias | Compara disponível ao mínimo da origem; agrupa valor dos lotes pela validade relativa à data da fotografia | Produto e loja; status explícito. O horizonte de 30 dias é regra operacional do painel, não previsão de perda |
 | Qual o valor exposto? | Valor de estoque e a vencer | Quantidade em mãos × custo médio; valor em lotes com validade em até 30 dias | BRL a custo; não é receita, margem nem perda realizada |
 | Quão atual é o painel? | Frescor e qualidade | Identifica `batch_id`, corte/publicação da origem, atualização Gold e falhas Silver | Lote e relação; distinguir zero, ausência de dados e falha de consulta |
+| Quanto tempo passou desde o corte? | Idade dos dados | Horas entre `source_cutoff_at` e o instante da consulta | Horas; cresce até a próxima carga, não indica tempo real |
+| As regras de transformação passaram? | Validações com falha e achados inválidos | Conta regras Silver com `invalid_rows > 0` e soma achados | Regras e achados; um registro pode aparecer em várias regras. Zero falhas não prova acuracidade física |
 
 O alerta de validade depende da **quantidade do lote**, mesmo quando o custo médio está ausente. Nesse caso, a quantidade em risco permanece visível e o valor monetário fica indisponível; não converter custo desconhecido em perda igual a zero.
 
 **Comportamento dos filtros:** período e loja afetam vendas, produto e pagamento. Estoque usa a última fotografia e recebe apenas o filtro de loja. Uma seleção de data não altera estoque.
+
+O dashboard inclui uma página **Dados e KPIs** e, na aba **Data**, os datasets `ds_reliability` e `ds_kpi_dictionary`. O dicionário apresenta fórmula, interpretação, fonte e situação de publicação, inclusive para indicadores ainda sem fonte; esses não recebem números fictícios.
 
 ## O que os dados permitem afirmar agora
 

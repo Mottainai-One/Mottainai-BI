@@ -81,6 +81,20 @@
       "queryLines": [
         "SELECT relation_name, checked_rows, invalid_rows, checked_at\nFROM motta_analytics.gold.quality_summary"
       ]
+    },
+    {
+      "name": "ds_reliability",
+      "displayName": "KPIs de confiabilidade da publicação",
+      "queryLines": [
+        "WITH publication AS (\n  SELECT batch_id, source_cutoff_at, source_published_at, refreshed_at\n  FROM motta_analytics.gold.dashboard_freshness\n  ORDER BY refreshed_at DESC\n  LIMIT 1\n), validations AS (\n  SELECT COUNT(*) AS validation_count,\n         SUM(CASE WHEN invalid_rows > 0 THEN 1 ELSE 0 END) AS failing_validations,\n         SUM(invalid_rows) AS invalid_findings\n  FROM motta_analytics.gold.quality_summary\n)\nSELECT p.batch_id, p.source_cutoff_at, p.source_published_at, p.refreshed_at,\n       TIMESTAMPDIFF(HOUR, p.source_cutoff_at, p.refreshed_at) AS pipeline_delay_hours,\n       TIMESTAMPDIFF(HOUR, p.source_cutoff_at, current_timestamp()) AS data_age_hours,\n       v.validation_count, v.failing_validations, v.invalid_findings\nFROM publication p CROSS JOIN validations v"
+      ]
+    },
+    {
+      "name": "ds_kpi_dictionary",
+      "displayName": "Dicionário de KPIs e análise",
+      "queryLines": [
+        "SELECT module, kpi, definition, analysis, source_dataset, status\nFROM VALUES\n  ('Comercial', 'Receita líquida', 'Soma de net_amount das vendas concluídas', 'Valor realizado; comparar apenas períodos equivalentes', 'ds_period', 'Publicado'),\n  ('Comercial', 'Vendas concluídas', 'Contagem de transações COMPLETED', 'Volume de compras; não representa clientes distintos', 'ds_period', 'Publicado'),\n  ('Comercial', 'Ticket médio', 'Receita líquida / vendas concluídas', 'Valor por compra; nulo sem vendas', 'ds_period', 'Publicado'),\n  ('Comercial', 'Itens por venda', 'Itens vendidos / vendas concluídas', 'Tamanho médio da cesta; não confundir com unidades', 'ds_period', 'Publicado'),\n  ('Comercial', 'Variação de receita', '(Receita atual - anterior) / anterior', 'Requer período anterior com receita e mesma duração', 'ds_period', 'Condicional'),\n  ('Comercial', 'Lojas e produtos com vendas', 'Contagens distintas no recorte', 'Cobertura observada; não é taxa de conversão', 'ds_sales / ds_product', 'Publicado'),\n  ('Comercial', 'Receita por produto', 'Soma do subtotal dos itens conciliados', 'Mostra concentração comercial; não é margem', 'ds_product', 'Publicado'),\n  ('Comercial', 'Valor por método', 'Soma dos pagamentos conciliados por venda', 'Uma venda pode usar vários métodos; não somar vendas por método', 'ds_payment', 'Publicado'),\n  ('Estoque', 'Unidades disponíveis', 'Quantidade em mãos - reservada', 'Fotografia mais recente por produto e loja', 'ds_inventory', 'Publicado'),\n  ('Estoque', 'Produtos com alerta', 'Produto/loja vencido, a vencer ou abaixo do mínimo', 'Contagem de posições que requerem verificação operacional', 'ds_inventory', 'Publicado'),\n  ('Estoque', 'Unidades a vencer em 30 dias', 'Soma da quantidade dos lotes com validade próxima', 'Exposição física; não é previsão de perda', 'ds_inventory', 'Publicado'),\n  ('Estoque', 'Valor a vencer em 30 dias', 'Quantidade do lote x custo médio conhecido', 'Exposição a custo; fica indisponível quando faltar custo', 'ds_inventory', 'Condicional'),\n  ('Estoque', 'Valor do estoque', 'Quantidade em mãos x custo médio conhecido', 'Valor contábil aproximado; não é receita nem margem', 'ds_inventory', 'Condicional'),\n  ('Confiabilidade', 'Idade dos dados', 'Horas entre o corte da origem e agora', 'Mostra o atraso da fotografia; não mede acuracidade física', 'ds_reliability', 'Publicado'),\n  ('Confiabilidade', 'Validações com falha', 'Regras Silver com invalid_rows maior que zero', 'Zero indica regras aprovadas, não inventário físico correto', 'ds_reliability', 'Publicado'),\n  ('Confiabilidade', 'Achados inválidos', 'Soma de invalid_rows nas regras Silver', 'Achados de validação; uma linha pode aparecer em mais de uma regra', 'ds_reliability', 'Publicado'),\n  ('Evolutivo', 'Acuracidade de inventário', 'Posições conferidas sem divergência / posições conferidas', 'Exige contagem física e cobertura definida', 'Inventário físico', 'Sem fonte'),\n  ('Evolutivo', 'Giro e cobertura de estoque', 'Saídas e estoque médio por SKU/loja em janela suficiente', 'Exige histórico e movimentos válidos', 'Movimentos / snapshots', 'Sem histórico'),\n  ('Evolutivo', 'Perda, recuperação e economia atribuível', 'Resultado confirmado, custo histórico e referência causal', 'Valor em risco não equivale a economia realizada', 'Perdas / ações', 'Sem eventos'),\n  ('Evolutivo', 'Efetividade dos alertas de IA', 'Alertas avaliados contra resultados observados', 'Exige previsão original, ação e desfecho', 'IA / ações', 'Sem eventos')\nAS dictionary(module, kpi, definition, analysis, source_dataset, status)"
+      ]
     }
   ],
   "pages": [
@@ -95,7 +109,7 @@
               "lines": [
                 "# Mottainai  |  Visão executiva\n",
                 "\n",
-                "Vendas concluídas do último lote analítico. Filtros de período e loja no topo; estoque usa a fotografia mais recente."
+                "Resultado comercial no recorte selecionado e sinais de confiabilidade do último lote publicado."
               ]
             }
           },
@@ -291,16 +305,260 @@
         },
         {
           "widget": {
-            "name": "history-note",
+            "name": "executive-analysis-1",
             "multilineTextboxSpec": {
               "lines": [
-                "**Leitura responsável:** o histórico atual tem somente um dia de vendas e uma loja com movimento. A variação fica sem valor enquanto o período anterior não tiver receita; não interprete a linha como tendência antes de haver mais datas."
+                "**Receita líquida**\n",
+                "Vendas concluídas e conciliadas; valor realizado, sem cancelamentos."
               ]
             }
           },
           "position": {
             "x": 0,
             "y": 5,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "executive-analysis-2",
+            "multilineTextboxSpec": {
+              "lines": [
+                "**Vendas**\n",
+                "Número de compras concluídas; não equivale a clientes distintos."
+              ]
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 5,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "executive-analysis-3",
+            "multilineTextboxSpec": {
+              "lines": [
+                "**Ticket médio**\n",
+                "Receita por compra; fica sem valor quando não há vendas."
+              ]
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 5,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "executive-analysis-4",
+            "multilineTextboxSpec": {
+              "lines": [
+                "**Variação**\n",
+                "Exige receita no período anterior de mesma duração."
+              ]
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 5,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "items-per-sale",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_period",
+                  "fields": [
+                    {
+                      "name": "value",
+                      "expression": "TRY_DIVIDE(SUM(`items_count`), SUM(`sales_count`))"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "value",
+                  "displayName": "Itens por venda"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Itens por venda"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 7,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "executive-stock-alerts",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_inventory",
+                  "fields": [
+                    {
+                      "name": "value",
+                      "expression": "COUNT_IF(`risk_status` <> 'Sem alerta')"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "value",
+                  "displayName": "Posições de estoque em alerta"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Posições de estoque em alerta"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 7,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "executive-quality",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_reliability",
+                  "fields": [
+                    {
+                      "name": "value",
+                      "expression": "MAX(`failing_validations`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "value",
+                  "displayName": "Validações com falha"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Validações com falha"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 7,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "executive-data-age",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_reliability",
+                  "fields": [
+                    {
+                      "name": "value",
+                      "expression": "MAX(`data_age_hours`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "value",
+                  "displayName": "Idade dos dados · horas"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Idade dos dados · horas"
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 7,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "executive-analysis-5",
+            "multilineTextboxSpec": {
+              "lines": [
+                "**Itens por venda:** tamanho da cesta. **Estoque:** fotografia atual, sem filtro de data. **Validação:** falha nas regras Silver, sem provar acuracidade física. **Idade:** horas desde o corte da origem; aumenta até a próxima carga."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 10,
+            "width": 12,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "history-note",
+            "multilineTextboxSpec": {
+              "lines": [
+                "**Limite da amostra:** há somente um dia com vendas e uma loja vendedora. A variação permanece vazia sem receita anterior; a linha abaixo mostra registros, não uma tendência comprovada."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 12,
             "width": 12,
             "height": 2
           }
@@ -360,7 +618,7 @@
           },
           "position": {
             "x": 0,
-            "y": 7,
+            "y": 14,
             "width": 6,
             "height": 6
           }
@@ -420,7 +678,7 @@
           },
           "position": {
             "x": 6,
-            "y": 7,
+            "y": 14,
             "width": 6,
             "height": 6
           }
@@ -494,7 +752,7 @@
           },
           "position": {
             "x": 0,
-            "y": 13,
+            "y": 20,
             "width": 12,
             "height": 4
           }
@@ -568,7 +826,7 @@
           },
           "position": {
             "x": 0,
-            "y": 17,
+            "y": 24,
             "width": 12,
             "height": 4
           }
@@ -588,7 +846,7 @@
               "lines": [
                 "# Comercial  |  Cobertura e composição\n",
                 "\n",
-                "Lojas e produtos com vendas no período; métodos de pagamento das vendas concluídas. Base pequena indica cobertura limitada."
+                "O que vende, onde vende e como é pago. O filtro de período e loja se aplica a esta página."
               ]
             }
           },
@@ -761,6 +1019,74 @@
         },
         {
           "widget": {
+            "name": "commercial-analysis-1",
+            "multilineTextboxSpec": {
+              "lines": [
+                "**Lojas com vendas**\n",
+                "Cobertura observada; lojas sem venda podem estar sem operação ou sem dados."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "commercial-analysis-2",
+            "multilineTextboxSpec": {
+              "lines": [
+                "**Produtos vendidos**\n",
+                "Amplitude do mix efetivamente vendido; não mede disponibilidade do catálogo."
+              ]
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 5,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "commercial-analysis-3",
+            "multilineTextboxSpec": {
+              "lines": [
+                "**Unidades vendidas**\n",
+                "Volume dos itens conciliados; comparar com receita para entender composição."
+              ]
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 5,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "commercial-analysis-4",
+            "multilineTextboxSpec": {
+              "lines": [
+                "**Métodos usados**\n",
+                "Variedade observada, sem inferir preferência com a amostra atual."
+              ]
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 5,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
             "name": "payment-bars",
             "queries": [
               {
@@ -814,7 +1140,7 @@
           },
           "position": {
             "x": 0,
-            "y": 5,
+            "y": 7,
             "width": 6,
             "height": 6
           }
@@ -874,9 +1200,25 @@
           },
           "position": {
             "x": 6,
-            "y": 5,
+            "y": 7,
             "width": 6,
             "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "commercial-chart-note",
+            "multilineTextboxSpec": {
+              "lines": [
+                "**Leitura:** valores por método são pagamentos conciliados; receita por produto vem dos itens vendidos. Uma venda pode conter vários produtos ou métodos. Ainda não há base para margem por produto."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 13,
+            "width": 12,
+            "height": 2
           }
         },
         {
@@ -964,7 +1306,7 @@
           },
           "position": {
             "x": 0,
-            "y": 11,
+            "y": 15,
             "width": 12,
             "height": 5
           }
@@ -982,9 +1324,9 @@
             "name": "stock-header",
             "multilineTextboxSpec": {
               "lines": [
-                "# Estoque  |  Disponibilidade e valor\n",
+                "# Estoque  |  Prioridade de ação\n",
                 "\n",
-                "Fotografia do produto por loja e lote; usa a data mais recente de cada produto. O filtro de data afeta vendas, não esta página."
+                "Fotografia mais recente por loja e produto. O filtro de loja se aplica; o de data de venda não altera estoque."
               ]
             }
           },
@@ -1086,7 +1428,7 @@
                   "fields": [
                     {
                       "name": "value",
-                      "expression": "SUM(`stock_value`)"
+                      "expression": "CASE WHEN SUM(`cost_missing_lot_count`) > 0 THEN NULL ELSE SUM(`stock_value`) END"
                     }
                   ],
                   "disaggregated": false
@@ -1134,7 +1476,7 @@
                   "fields": [
                     {
                       "name": "value",
-                      "expression": "SUM(`value_expiring_30d`)"
+                      "expression": "CASE WHEN SUM(`cost_missing_lot_count`) > 0 THEN NULL ELSE SUM(`value_expiring_30d`) END"
                     }
                   ],
                   "disaggregated": false
@@ -1169,6 +1511,210 @@
             "y": 2,
             "width": 3,
             "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "stock-analysis-1",
+            "multilineTextboxSpec": {
+              "lines": [
+                "**Alerta**\n",
+                "Posições vencidas, a vencer ou abaixo do mínimo; confirmar no local."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "stock-analysis-2",
+            "multilineTextboxSpec": {
+              "lines": [
+                "**Disponível**\n",
+                "Saldo em mãos menos reservas; não é quantidade em gôndola."
+              ]
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 5,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "stock-analysis-3",
+            "multilineTextboxSpec": {
+              "lines": [
+                "**Valor a custo**\n",
+                "Capital em estoque, não receita; fica indisponível se faltar custo."
+              ]
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 5,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "stock-analysis-4",
+            "multilineTextboxSpec": {
+              "lines": [
+                "**A vencer**\n",
+                "Exposição em até 30 dias, não perda prevista nem economia."
+              ]
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 5,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "expiring-quantity",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_inventory",
+                  "fields": [
+                    {
+                      "name": "value",
+                      "expression": "SUM(`quantity_expiring_30d`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "value",
+                  "displayName": "Unidades a vencer em 30 dias"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Unidades a vencer em 30 dias"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 7,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "expired-quantity",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_inventory",
+                  "fields": [
+                    {
+                      "name": "value",
+                      "expression": "SUM(`expired_quantity`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "value",
+                  "displayName": "Unidades já vencidas"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Unidades já vencidas"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 7,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "missing-cost",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_inventory",
+                  "fields": [
+                    {
+                      "name": "value",
+                      "expression": "SUM(`cost_missing_lot_count`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "value",
+                  "displayName": "Lotes sem custo"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Lotes sem custo"
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 7,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "stock-secondary-note",
+            "multilineTextboxSpec": {
+              "lines": [
+                "**Ação:** priorize lote vencido e validade próxima; confira saldo e custo ausente antes de decidir preço ou destinação. As quantidades seguem visíveis mesmo quando o valor monetário não pode ser calculado."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 10,
+            "width": 12,
+            "height": 2
           }
         },
         {
@@ -1218,7 +1764,7 @@
           },
           "position": {
             "x": 0,
-            "y": 5,
+            "y": 12,
             "width": 12,
             "height": 5
           }
@@ -1316,7 +1862,7 @@
           },
           "position": {
             "x": 0,
-            "y": 10,
+            "y": 17,
             "width": 12,
             "height": 6
           }
@@ -1406,7 +1952,7 @@
           },
           "position": {
             "x": 0,
-            "y": 16,
+            "y": 23,
             "width": 12,
             "height": 6
           }
@@ -1424,15 +1970,191 @@
             "name": "distribution-header",
             "multilineTextboxSpec": {
               "lines": [
-                "# Distribuição e qualidade\n",
+                "# Confiabilidade e distribuição\n",
                 "\n",
-                "Histograma e boxplot mostram os tickets observados. Com apenas um preço e uma loja vendedora, ainda não há dispersão real; a qualidade registra o que a Silver validou."
+                "Regras de validação e idade do último lote publicado. Distribuição de tickets requer amostra mais diversa para conclusões."
               ]
             }
           },
           "position": {
             "x": 0,
             "y": 0,
+            "width": 12,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "validated-rules",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_reliability",
+                  "fields": [
+                    {
+                      "name": "value",
+                      "expression": "MAX(`validation_count`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "value",
+                  "displayName": "Regras verificadas"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Regras verificadas"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "failing-rules",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_reliability",
+                  "fields": [
+                    {
+                      "name": "value",
+                      "expression": "MAX(`failing_validations`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "value",
+                  "displayName": "Regras com falha"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Regras com falha"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 2,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "invalid-findings",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_reliability",
+                  "fields": [
+                    {
+                      "name": "value",
+                      "expression": "MAX(`invalid_findings`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "value",
+                  "displayName": "Achados inválidos"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Achados inválidos"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 2,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "data-age",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_reliability",
+                  "fields": [
+                    {
+                      "name": "value",
+                      "expression": "MAX(`data_age_hours`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "value",
+                  "displayName": "Idade dos dados · horas"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Idade dos dados · horas"
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 2,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "quality-analysis",
+            "multilineTextboxSpec": {
+              "lines": [
+                "**Interpretação:** regras com falha e achados vêm das verificações Silver; um registro pode violar várias regras. Zero falhas não prova acuracidade do inventário físico. A idade conta desde o corte da origem e cresce até a próxima publicação."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
             "width": 12,
             "height": 2
           }
@@ -1484,7 +2206,7 @@
           },
           "position": {
             "x": 0,
-            "y": 2,
+            "y": 7,
             "width": 6,
             "height": 6
           }
@@ -1535,9 +2257,25 @@
           },
           "position": {
             "x": 6,
-            "y": 2,
+            "y": 7,
             "width": 6,
             "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "ticket-analysis",
+            "multilineTextboxSpec": {
+              "lines": [
+                "**Leitura:** faixa de ticket e dispersão descrevem somente as compras observadas. Com uma loja vendedora e um dia de vendas, não há comparação confiável entre lojas ou evolução temporal."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 13,
+            "width": 12,
+            "height": 2
           }
         },
         {
@@ -1601,9 +2339,133 @@
           },
           "position": {
             "x": 0,
-            "y": 8,
+            "y": 15,
             "width": 12,
             "height": 7
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "dictionary",
+      "displayName": "Dados e KPIs",
+      "layout": [
+        {
+          "widget": {
+            "name": "dictionary-header",
+            "multilineTextboxSpec": {
+              "lines": [
+                "# Dados e definições dos KPIs\n",
+                "\n",
+                "Cada indicador informa fórmula, uso e condição de publicação. Esta tabela também está na aba Data como dataset independente."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "dictionary-table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_kpi_dictionary",
+                  "fields": [
+                    {
+                      "name": "module",
+                      "expression": "`module`"
+                    },
+                    {
+                      "name": "kpi",
+                      "expression": "`kpi`"
+                    },
+                    {
+                      "name": "definition",
+                      "expression": "`definition`"
+                    },
+                    {
+                      "name": "analysis",
+                      "expression": "`analysis`"
+                    },
+                    {
+                      "name": "source_dataset",
+                      "expression": "`source_dataset`"
+                    },
+                    {
+                      "name": "status",
+                      "expression": "`status`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "module",
+                    "displayName": "Módulo"
+                  },
+                  {
+                    "fieldName": "kpi",
+                    "displayName": "KPI"
+                  },
+                  {
+                    "fieldName": "definition",
+                    "displayName": "Cálculo"
+                  },
+                  {
+                    "fieldName": "analysis",
+                    "displayName": "Como analisar"
+                  },
+                  {
+                    "fieldName": "source_dataset",
+                    "displayName": "Dataset / fonte"
+                  },
+                  {
+                    "fieldName": "status",
+                    "displayName": "Situação"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Catálogo de indicadores"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 12,
+            "height": 18
+          }
+        },
+        {
+          "widget": {
+            "name": "dictionary-note",
+            "multilineTextboxSpec": {
+              "lines": [
+                "**Sem fonte** e **sem eventos** significam que o KPI ainda não deve mostrar número. Métricas condicionais exigem dados suficientes e denominadores válidos. Os filtros comerciais não alteram este dicionário."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 20,
+            "width": 12,
+            "height": 2
           }
         }
       ],
