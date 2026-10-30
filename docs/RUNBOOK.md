@@ -49,4 +49,6 @@ No PostgreSQL, conecte-se **ao database `MOTTAINAI_ANALITICO`** e execute `SELEC
 
 O dashboard representa a fotografia do corte efetivo, não tempo real. O painel foi publicado sem credenciais embutidas (`embed_credentials=false`); conceda somente as permissões necessárias aos leitores. O [run 906604160409285](https://dbc-38ac8920-cbf4.cloud.databricks.com/jobs/731348243647869/runs/906604160409285?o=7474654317437663) concluiu as cinco tarefas em 29/10/2026.
 
+O [run 158784198667118](https://dbc-38ac8920-cbf4.cloud.databricks.com/jobs/731348243647869/runs/158784198667118?o=7474654317437663) validou o modelo v6 com os oito fatos operacionais e o refresh em 30/10/2026. Como esses fatos ainda estavam vazios no analítico, os cartões de eventos permanecem sem valor até uma publicação com dados reais. A nova página **Operações e perdas** e três datasets operacionais foram publicados no mesmo dashboard.
+
 O [run 608262702654119](https://dbc-38ac8920-cbf4.cloud.databricks.com/jobs/731348243647869/runs/608262702654119?o=7474654317437663) confirmou o refresh da revisão final publicada.
