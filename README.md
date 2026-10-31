@@ -30,7 +30,6 @@ O dashboard consulta views Gold, incluindo `sales_daily`, `sales_tickets`, `prod
 
 O painel tem três páginas: visão executiva, estoque, e distribuição/qualidade. Os filtros globais são período e loja; estoque representa a fotografia mais recente, não uma série histórica de vendas.
 
-O relatório de entrega registra que a amostra validada em 29/10/2026 tinha um dia de vendas e uma loja vendedora. Ela não sustenta conclusões sobre tendência, sazonalidade ou comparação ampla entre lojas. O mapa é condicional porque a origem consultada não tinha coordenadas válidas. O [relatório de entrega](docs/ENTREGA_BI.md) também registra que a verificação visual dos widgets e filtros com uma sessão autenticada ainda precisava ser feita.
 
 ## Tecnologias
 
@@ -86,4 +85,3 @@ O [workflow de CI](.github/workflows/ci.yml) compila os notebooks, regenera e va
 - [Execução registrada em 29/10/2026](https://dbc-38ac8920-cbf4.cloud.databricks.com/jobs/731348243647869/runs/97850894011189?o=7474654317437663)
 - [Runbook](docs/RUNBOOK.md), [relatório gerencial](docs/RELATORIO_GERENCIAL.md) e [matriz de evidências](docs/ENTREGA_BI.md).
 
-Os registros de execução descrevem o resultado daquela data; acesso, dados e estado atual do workspace devem ser confirmados no ambiente.
