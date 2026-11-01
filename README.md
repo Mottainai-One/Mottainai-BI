@@ -12,6 +12,12 @@ preflight → bronze → silver → gold → refresh_dashboard
 
 As três camadas ficam em `motta_analytics.bronze`, `motta_analytics.silver` e `motta_analytics.gold`; `motta_analytics.control` guarda os marcadores. O dashboard consulta apenas Gold. O banco operacional é usado no preflight para conferir a conexão, sem alimentar os gráficos diretamente. Credenciais ficam nas conexões Unity Catalog.
 
+## Organização no workspace
+
+Os arquivos do bundle são implantados em `Workspace/Users/ana.costa@institutojef.org.br/MOTTAINAI/BI`: `notebooks/` contém as etapas do medalhão, `dashboard/` contém a definição versionada e os datasets SQL, e `docs/` contém o runbook, o catálogo de KPIs e os critérios de publicação. O dashboard publicado permanece no mesmo diretório `MOTTAINAI` e é atualizado pelo job existente.
+
+Conexões Unity Catalog e Jobs & Pipelines são objetos globais do workspace, não itens que possam ser aninhados numa pasta do Workspace. O guia [`docs/WORKSPACE_GUIDE.md`](docs/WORKSPACE_GUIDE.md) registra os nomes, bancos, IDs, horários e links de acesso sem guardar credenciais.
+
 ## Entregáveis
 
 - [PR #5 da revisão de indicadores](https://github.com/Mottainai-One/Mottainai-BI/pull/5), continuação da PR #3 mesclada.
@@ -23,4 +29,4 @@ As três camadas ficam em `motta_analytics.bronze`, `motta_analytics.silver` e `
 
 O dashboard apresenta quatro páginas: visão executiva, comercial, estoque e distribuição/qualidade. Há filtros globais de período e loja. A amostra atual contém somente um dia de vendas e uma loja vendedora; comparação temporal e dispersão devem ser interpretadas como testes de visualização até que exista histórico suficiente. O mapa permanece condicional porque a origem não possui coordenadas.
 
-A [PR RPA #11](https://github.com/Mottainai-One/Mottanai-RPA/pull/11) contém a correção de publicação diária e ainda depende do fluxo de revisão/merge da equipe. Uma carga concluída fora da janela diária exige executar o job Databricks manualmente após confirmar o novo lote.
+Uma carga concluída fora da janela diária exige executar o job Databricks manualmente após confirmar o novo lote publicado no banco analítico.

@@ -1,6 +1,12 @@
 # Databricks notebook source
 """Validate both PostgreSQL connections and the committed analytical snapshot."""
 
+
+# COMMAND ----------
+# MAGIC %md
+# MAGIC ## Dependências e validação de identificadores
+# COMMAND ----------
+
 import re
 
 
@@ -13,6 +19,12 @@ def identifier(value: str) -> str:
 def literal(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
+
+
+# COMMAND ----------
+# MAGIC %md
+# MAGIC ## Parâmetros do job
+# COMMAND ----------
 
 for name, default in (
     ("operational_connection", "conection_motta_operacional"),
@@ -33,6 +45,12 @@ if (operational_connection, operational_database) == (analytics_connection, anal
     raise ValueError("Operational and analytical sources must be distinct")
 
 
+
+# COMMAND ----------
+# MAGIC %md
+# MAGIC ## Consultas somente leitura às conexões
+# COMMAND ----------
+
 def remote_query(connection: str, database: str, sql: str):
     return spark.sql(
         "SELECT * FROM remote_query("
@@ -40,6 +58,12 @@ def remote_query(connection: str, database: str, sql: str):
         f"query => {literal(sql)})"
     )
 
+
+
+# COMMAND ----------
+# MAGIC %md
+# MAGIC ## Validar conectividade operacional e analítica
+# COMMAND ----------
 
 for connection, database in (
     (operational_connection, operational_database),
@@ -60,6 +84,12 @@ remote_query(
     "SELECT 1 AS operational_connection_ok FROM mottainai.company LIMIT 1",
 ).collect()
 
+
+# COMMAND ----------
+# MAGIC %md
+# MAGIC ## Confirmar contrato e lote analítico publicado
+# COMMAND ----------
+
 published = remote_query(
     analytics_connection,
     analytics_database,
@@ -73,6 +103,12 @@ published = remote_query(
 ).collect()
 if len(published) > 1:
     raise RuntimeError("Analytical publication view returned more than one batch")
+
+
+# COMMAND ----------
+# MAGIC %md
+# MAGIC ## Preparar schemas e encerrar com segurança
+# COMMAND ----------
 
 for schema in ("bronze", "silver", "gold", "control"):
     spark.sql(f"CREATE SCHEMA IF NOT EXISTS `{target_catalog}`.`{schema}`")

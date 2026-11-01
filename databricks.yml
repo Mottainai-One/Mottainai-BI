@@ -1,6 +1,13 @@
 bundle:
   name: mottainai_bi
 
+# Keep authoring utilities and the retired monolithic notebook in Git/CI,
+# but out of the curated Databricks workspace folder.
+sync:
+  exclude:
+    - dashboard/build_dashboard.py
+    - archive/legacy/02_refresh_medallion.py
+
 variables:
   operational_connection:
     description: Unity Catalog connection to PostgreSQL MOTTAINAI (preflight only).
@@ -15,6 +22,12 @@ variables:
   target_catalog:
     description: Managed Unity Catalog destination for Delta tables.
     default: motta_analytics
+
+workspace:
+  # Keep notebooks, dashboard source, and operating docs grouped in the
+  # user's MOTTAINAI workspace folder. Bundle deployment state remains in
+  # the existing default root so this deployment continues updating job 731348243647869.
+  file_path: /Users/ana.costa@institutojef.org.br/MOTTAINAI/BI
 
 resources:
   jobs:
@@ -56,7 +69,7 @@ resources:
           depends_on:
             - task_key: gold
           dashboard_task:
-            dashboard_id: 01f1d22904b81b738aef457d6a67f354
+            dashboard_id: 01f1d581d40c1272b43d52fd8c18722a
             warehouse_id: 64bc14de5692c645
       schedule:
         quartz_cron_expression: '0 30 2 * * ?'

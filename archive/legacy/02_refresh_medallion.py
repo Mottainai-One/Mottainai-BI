@@ -1,4 +1,11 @@
 # Databricks notebook source
+
+# COMMAND ----------
+# MAGIC %md
+# MAGIC # Implementação legada — não executar
+# MAGIC Esta versão monolítica não pertence ao job ativo. O fluxo oficial está dividido em tarefas no `databricks.yml`.
+# COMMAND ----------
+
 """Validate one Bronze batch and atomically expose a business-facing Gold snapshot."""
 
 import re
