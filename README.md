@@ -27,6 +27,6 @@ Conexões Unity Catalog e Jobs & Pipelines são objetos globais do workspace, n�
 - [Atualização da versão publicada](https://dbc-38ac8920-cbf4.cloud.databricks.com/jobs/731348243647869/runs/608262702654119?o=7474654317437663)
 - [Catálogo de indicadores](docs/KPI_CATALOG.md), [relatório gerencial](docs/RELATORIO_GERENCIAL.md), [matriz de evidências](docs/ENTREGA_BI.md), [especificação do painel](dashboard/README.md) e [runbook](docs/RUNBOOK.md).
 
-O dashboard apresenta quatro páginas: visão executiva, comercial, estoque e distribuição/qualidade. Há filtros globais de período e loja. A amostra atual contém somente um dia de vendas e uma loja vendedora; comparação temporal e dispersão devem ser interpretadas como testes de visualização até que exista histórico suficiente. O mapa permanece condicional porque a origem não possui coordenadas.
+O dashboard apresenta seis páginas: visão executiva, comercial, estoque, operações e perdas, distribuição e qualidade, e dados/KPIs. Há filtros globais de período e loja. A amostra atual contém somente um dia de vendas e uma loja vendedora; comparação temporal e dispersão devem ser interpretadas como testes de visualização até que exista histórico suficiente. O mapa permanece condicional porque a origem não possui coordenadas.
 
 Uma carga concluída fora da janela diária exige executar o job Databricks manualmente após confirmar o novo lote publicado no banco analítico.
