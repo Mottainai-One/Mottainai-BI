@@ -1,6 +1,12 @@
 # Databricks notebook source
 """Testa a conexão PostgreSQL e copia um lote publicado para Bronze Delta."""
 
+
+# COMMAND ----------
+# MAGIC %md
+# MAGIC ## Dependências e utilitários SQL
+# COMMAND ----------
+
 import re
 import uuid
 
@@ -17,6 +23,12 @@ def quoted(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
 
+
+# COMMAND ----------
+# MAGIC %md
+# MAGIC ## Parâmetros e destinos Unity Catalog
+# COMMAND ----------
+
 for name, default in (
     ("analytics_connection", "motta_analytics"),
     ("analytics_database", "MOTTAINAI_ANALITICO"),
@@ -31,6 +43,12 @@ bronze_schema = f"`{catalog}`.`bronze`"
 control_schema = f"`{catalog}`.`control`"
 control_table = f"{control_schema}.`bronze_publication`"
 
+
+
+# COMMAND ----------
+# MAGIC %md
+# MAGIC ## Acesso controlado à origem PostgreSQL
+# COMMAND ----------
 
 def remote_query(query: str):
     return spark.sql(
@@ -50,6 +68,12 @@ def remote_table(relation: str):
 
 # A consulta direta evita a cota de 100 tabelas por schema que impede a
 # sincronização do catálogo estrangeiro neste workspace Free Edition.
+
+# COMMAND ----------
+# MAGIC %md
+# MAGIC ## Validar conexão e localizar lote publicado
+# COMMAND ----------
+
 database_name = remote_query("SELECT current_database() AS database_name").first()[
     "database_name"
 ]
@@ -78,6 +102,12 @@ batch = str(uuid.UUID(str(publication[0]["batch_id"])))
 source_cutoff_at = publication[0]["source_cutoff_at"]
 published_at = publication[0]["published_at"]
 
+
+# COMMAND ----------
+# MAGIC %md
+# MAGIC ## Inicializar controle e garantir idempotência
+# COMMAND ----------
+
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS {bronze_schema}")
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS {control_schema}")
 spark.sql(f"""
@@ -96,12 +126,14 @@ previous = spark.sql(
 ).collect()
 if len(previous) > 1:
     raise RuntimeError("Controle Bronze contém publicações duplicadas")
-if previous and previous[0]["batch_id"] == batch:
-    print(f"Lote {batch} já está na Bronze")
-    dbutils.notebook.exit("NO_NEW_BATCH")
-
 # Bronze preserva os fatos e dimensões analíticas no grão de origem. Views de
 # negócio são retidas para reconciliação, nunca servidas diretamente pelo Gold.
+
+# COMMAND ----------
+# MAGIC %md
+# MAGIC ## Contrato explícito de tabelas analíticas de origem
+# COMMAND ----------
+
 relations = (
     "dim_company",
     "dim_store",
@@ -109,7 +141,16 @@ relations = (
     "dim_product",
     "fact_sales",
     "fact_sale_item",
+    "fact_sale_payment",
     "fact_inventory_snapshot",
+    "fact_inventory_count_line",
+    "fact_transfer_line",
+    "fact_replenishment_plan_line",
+    "fact_replenishment_execution_line",
+    "fact_donation_line",
+    "fact_disposal_line",
+    "fact_alert_lifecycle",
+    "fact_action_lifecycle",
     "vw_sales_daily_kpis",
     "mv_dashboard_metrics",
     "vw_monthly_summary",
@@ -119,7 +160,22 @@ relations = (
     "vw_executive_dashboard",
 )
 
+# Um modelo novo pode precisar de uma relação ausente mesmo sem lote novo.
+# Reprocessar nesse caso permite promover a mesma fotografia sem esperar 02:00.
+if previous and previous[0]["batch_id"] == batch and all(
+    spark.catalog.tableExists(f"{catalog}.bronze.{relation}")
+    for relation in relations
+):
+    print(f"Lote {batch} já está completo na Bronze")
+    dbutils.notebook.exit("NO_NEW_BATCH")
+
 # Confere todas as origens antes de gravar qualquer tabela Bronze.
+
+# COMMAND ----------
+# MAGIC %md
+# MAGIC ## Ler snapshot da origem antes de gravar
+# COMMAND ----------
+
 frames = {}
 source_counts = {}
 for relation in relations:
@@ -135,6 +191,12 @@ for relation in relations:
         frame = remote_table(relation)
     source_counts[relation] = frame.count()
     frames[relation] = frame
+
+
+# COMMAND ----------
+# MAGIC %md
+# MAGIC ## Gravar Bronze e reconciliar contagens
+# COMMAND ----------
 
 for relation, frame in frames.items():
     table = f"{bronze_schema}.`{relation}`"
@@ -155,6 +217,12 @@ for relation, frame in frames.items():
             f"Bronze {relation}: origem={source_counts[relation]}, destino={written}"
         )
     print(f"Bronze {relation}: {written} linhas")
+
+
+# COMMAND ----------
+# MAGIC %md
+# MAGIC ## Confirmar consistência e publicar lote Bronze
+# COMMAND ----------
 
 latest = remote_query("""
     SELECT batch_id FROM mottainai_analytics.job_log

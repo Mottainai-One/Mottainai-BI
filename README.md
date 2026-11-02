@@ -28,7 +28,7 @@ O dashboard consulta views Gold, incluindo `sales_daily`, `sales_tickets`, `prod
 
 ## Dashboard e limites dos dados
 
-O painel tem três páginas: visão executiva, estoque, e distribuição/qualidade. Os filtros globais são período e loja; estoque representa a fotografia mais recente, não uma série histórica de vendas.
+O painel tem seis páginas: visão executiva, comercial, estoque, operações e perdas, distribuição e qualidade, e dados/KPIs. Os filtros globais são período e loja; estoque representa a fotografia mais recente, não uma série histórica de vendas.
 
 O relatório de entrega registra que a amostra validada em 29/10/2026 tinha um dia de vendas e uma loja vendedora. Ela não sustenta conclusões sobre tendência, sazonalidade ou comparação ampla entre lojas. O mapa é condicional porque a origem consultada não tinha coordenadas válidas. O [relatório de entrega](docs/ENTREGA_BI.md) também registra que a verificação visual dos widgets e filtros com uma sessão autenticada ainda precisava ser feita.
 
@@ -79,11 +79,18 @@ Uma carga publicada fora da janela diária requer execução do job após a conf
 
 O [workflow de CI](.github/workflows/ci.yml) compila os notebooks, regenera e valida o JSON do dashboard e verifica a configuração e a ordem das tarefas do bundle. Essas verificações estáticas não substituem a execução no workspace.
 
+## Organização no workspace
+
+Os arquivos do bundle são implantados em `Workspace/Users/ana.costa@institutojef.org.br/MOTTAINAI/BI`: `notebooks/` contém as etapas do medalhão, `dashboard/` contém a definição versionada e os datasets SQL, e `docs/` contém o runbook, o catálogo de KPIs e os critérios de publicação. O dashboard publicado permanece no diretório `MOTTAINAI` e é atualizado pelo job existente.
+
+Conexões Unity Catalog e Jobs & Pipelines são objetos globais do workspace. O guia [`docs/WORKSPACE_GUIDE.md`](docs/WORKSPACE_GUIDE.md) registra nomes, bancos, IDs, horários e links de acesso, sem credenciais.
+
 ## Links úteis
 
 - [Dashboard publicado](https://dbc-38ac8920-cbf4.cloud.databricks.com/sql/dashboardsv3/01f1d22904b81b738aef457d6a67f354/published?o=7474654317437663)
 - [Job Databricks](https://dbc-38ac8920-cbf4.cloud.databricks.com/jobs/731348243647869?o=7474654317437663)
 - [Execução registrada em 29/10/2026](https://dbc-38ac8920-cbf4.cloud.databricks.com/jobs/731348243647869/runs/97850894011189?o=7474654317437663)
-- [Runbook](docs/RUNBOOK.md), [relatório gerencial](docs/RELATORIO_GERENCIAL.md) e [matriz de evidências](docs/ENTREGA_BI.md).
+- [Execução validada, cinco tarefas](https://dbc-38ac8920-cbf4.cloud.databricks.com/jobs/731348243647869/runs/906604160409285?o=7474654317437663) e [atualização da versão publicada](https://dbc-38ac8920-cbf4.cloud.databricks.com/jobs/731348243647869/runs/608262702654119?o=7474654317437663).
+- [Catálogo de indicadores](docs/KPI_CATALOG.md), [especificação do painel](dashboard/README.md), [runbook](docs/RUNBOOK.md), [relatório gerencial](docs/RELATORIO_GERENCIAL.md) e [matriz de evidências](docs/ENTREGA_BI.md).
 
 Os registros de execução descrevem o resultado daquela data; acesso, dados e estado atual do workspace devem ser confirmados no ambiente.
