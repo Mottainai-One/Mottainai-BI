@@ -94,4 +94,3 @@ Conexões Unity Catalog e Jobs & Pipelines são objetos globais do workspace. O 
 - [Catálogo de indicadores](docs/KPI_CATALOG.md), [especificação do painel](dashboard/README.md), [runbook](docs/RUNBOOK.md), [relatório gerencial](docs/RELATORIO_GERENCIAL.md) e [matriz de evidências](docs/ENTREGA_BI.md).
 
 Os registros de execução descrevem o resultado daquela data; acesso, dados e estado atual do workspace devem ser confirmados no ambiente.
-
